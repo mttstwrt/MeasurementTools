@@ -5,38 +5,27 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
-import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.client.world.ClientWorld;
+import net.minecraft.client.util.BufferAllocator;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.math.*;
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
-import java.util.Vector;
 import java.util.List;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.UUID;
-
-import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.text.Text;
 
 import java.util.concurrent.atomic.AtomicReference;
 
 
-import net.fabricmc.api.ClientModInitializer;
 
 public class MeasurementToolsClient implements ClientModInitializer {
 	private static final String KEY_CATEGORY = "key.category.blockhighlighter";
@@ -45,7 +34,7 @@ public class MeasurementToolsClient implements ClientModInitializer {
 
 	private static KeyBinding keyBindingAddBlock;
 	private static KeyBinding keyBindingClear;
-	private static List<AtomicReference<BlockPos>> targetedBlocks = new ArrayList<>();
+	private static final List<AtomicReference<BlockPos>> targetedBlocks = new ArrayList<>();
 
 	@Override
 	public void onInitializeClient() {
@@ -112,6 +101,22 @@ public class MeasurementToolsClient implements ClientModInitializer {
 	}
 
 	private void renderHighlight(WorldRenderContext context) {
+
+		if (targetedBlocks.isEmpty()) return;
+		BlockPos initialPos = targetedBlocks.getFirst().get();
+		float minX = initialPos.getX();
+		float minY = initialPos.getY();
+		float minZ = initialPos.getZ();
+		float maxX = initialPos.getX();
+		float maxY = initialPos.getY();
+		float maxZ = initialPos.getZ();
+
+		// Define highlight colors (RGBA)
+		float red = 1.0F;
+		float green = 0.3F;
+		float blue = 0.3F;
+		float alpha = 1.0F;
+
 		for (AtomicReference<BlockPos> targetedBlock : targetedBlocks) {
 			// Only render if highlight is enabled and there's a target block
 			if (targetedBlock.get() == null) return;
@@ -119,41 +124,40 @@ public class MeasurementToolsClient implements ClientModInitializer {
 			// Only render if the block still exists
 			BlockPos pos = targetedBlock.get();
 
-			// Get rendering context
-			MatrixStack matrices = context.matrixStack();
-			Vec3d camera = context.camera().getPos();
-			VertexConsumerProvider consumers = context.consumers();
-
-			if (consumers == null) return;
-
-			// Push matrix and translate to block position
-			assert matrices != null;
-			matrices.push();
-			matrices.translate(
-					pos.getX() - camera.x,
-					pos.getY() - camera.y,
-					pos.getZ() - camera.z
-			);
-
-			// Get the block's outline shape for exact dimensions
-			Box box = new Box(0, 0, 0, 1, 1, 1);
-
-			// Define highlight colors (RGBA)
-			float red = 1.0F;
-			float green = 0.3F;
-			float blue = 0.3F;
-			float alpha = 0.8F;
-
-			// Draw block outline
-			VertexConsumer lines = consumers.getBuffer(RenderLayer.getLines());
-			drawBox(matrices, lines, box, red, green, blue, alpha);
-
-			matrices.pop();
+			// Set min/max position
+			if (pos.getX() < minX) minX = pos.getX();
+			if (pos.getY() < minY) minY = pos.getY();
+			if (pos.getZ() < minZ) minZ = pos.getZ();
+			if (pos.getX() > maxX) maxX = pos.getX();
+			if (pos.getY() > maxY) maxY = pos.getY();
+			if (pos.getZ() > maxZ) maxZ = pos.getZ();
 		}
+
+		// Get rendering context
+		MatrixStack matrices = context.matrixStack();
+		Vec3d camera = context.camera().getPos();
+		VertexConsumerProvider consumers = context.consumers();
+		if (consumers == null) return;
+
+		// Push matrix and translate to block position
+		assert matrices != null;
+		matrices.push();
+		matrices.translate(
+				minX - camera.x,
+				minY - camera.y,
+				minZ - camera.z
+		);
+
+		// Get the block's outline shape for exact dimensions
+		Box box = new Box(0, 0, 0, maxX - minX + 1, maxY - minY + 1, maxZ - minZ + 1);
+
+		// Draw block outline
+		VertexConsumer lines = consumers.getBuffer(RenderLayer.getLines());
+		drawBox(context, matrices, lines, box, red, green, blue, alpha);
+		matrices.pop();
 	}
 
-	private void drawBox(MatrixStack matrices, VertexConsumer lines, Box box, float red, float green, float blue, float alpha) {
-		Matrix4f matrix = matrices.peek().getPositionMatrix();
+	private void drawBox(WorldRenderContext context, MatrixStack matrices, VertexConsumer lines, Box box, float red, float green, float blue, float alpha) {
 		float minX = (float)box.minX;
 		float minY = (float)box.minY;
 		float minZ = (float)box.minZ;
@@ -162,26 +166,62 @@ public class MeasurementToolsClient implements ClientModInitializer {
 		float maxZ = (float)box.maxZ;
 
 		// Bottom face
-		drawLine(matrix, lines, minX, minY, minZ, maxX, minY, minZ, red, green, blue, alpha);
-		drawLine(matrix, lines, minX, minY, maxZ, maxX, minY, maxZ, red, green, blue, alpha);
-		drawLine(matrix, lines, minX, minY, minZ, minX, minY, maxZ, red, green, blue, alpha);
-		drawLine(matrix, lines, maxX, minY, minZ, maxX, minY, maxZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, minX, minY, minZ, maxX, minY, minZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, minX, minY, maxZ, maxX, minY, maxZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, minX, minY, minZ, minX, minY, maxZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, maxX, minY, minZ, maxX, minY, maxZ, red, green, blue, alpha);
 
 		// Top face
-		drawLine(matrix, lines, minX, maxY, minZ, maxX, maxY, minZ, red, green, blue, alpha);
-		drawLine(matrix, lines, minX, maxY, maxZ, maxX, maxY, maxZ, red, green, blue, alpha);
-		drawLine(matrix, lines, minX, maxY, minZ, minX, maxY, maxZ, red, green, blue, alpha);
-		drawLine(matrix, lines, maxX, maxY, minZ, maxX, maxY, maxZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, minX, maxY, minZ, maxX, maxY, minZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, minX, maxY, maxZ, maxX, maxY, maxZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, minX, maxY, minZ, minX, maxY, maxZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, maxX, maxY, minZ, maxX, maxY, maxZ, red, green, blue, alpha);
 
 		// Connecting edges
-		drawLine(matrix, lines, minX, minY, minZ, minX, maxY, minZ, red, green, blue, alpha);
-		drawLine(matrix, lines, maxX, minY, minZ, maxX, maxY, minZ, red, green, blue, alpha);
-		drawLine(matrix, lines, minX, minY, maxZ, minX, maxY, maxZ, red, green, blue, alpha);
-		drawLine(matrix, lines, maxX, minY, maxZ, maxX, maxY, maxZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, minX, minY, minZ, minX, maxY, minZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, maxX, minY, minZ, maxX, maxY, minZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, minX, minY, maxZ, minX, maxY, maxZ, red, green, blue, alpha);
+		drawLineWithNumber(context, matrices, lines, maxX, minY, maxZ, maxX, maxY, maxZ, red, green, blue, alpha);
+	}
+
+	private void drawLineWithNumber(WorldRenderContext context, MatrixStack matrices, VertexConsumer lines, float x1, float y1, float z1, float x2, float y2, float z2,
+									float red, float green, float blue, float alpha) {
+		drawLine(matrices.peek().getPositionMatrix(), lines, x1, y1, z1, x2, y2, z2, red, green, blue, alpha);
+
+        matrices.push();
+
+		float midX = (x2 - x1) / 2.0f;
+		float midY = (y2 - y1) / 2.0f;
+		float midZ = (z2 - z1) / 2.0f;
+
+		matrices.translate(midX, midY + 0.1f, midZ);
+		matrices.multiply(MinecraftClient.getInstance().gameRenderer.getCamera().getRotation());
+		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180));
+		matrices.scale(-0.025f, -0.025f, 0.025f); // Negative scale to flip text
+
+		String numberText = String.valueOf(Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2) + Math.pow(z2 - z1, 2)));
+
+		final TextRenderer textRenderer = MinecraftClient.getInstance().textRenderer;
+		final VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(0));
+		textRenderer.draw(
+				numberText,
+				0,
+				0,
+				0xFFFFFF,
+				false, // shadow
+				matrices.peek().getPositionMatrix(),
+				immediate,
+				TextRenderer.TextLayerType.SEE_THROUGH,
+				0x80000000,
+				15728880
+		);
+		immediate.draw();
+
+		matrices.pop();
 	}
 
 	private void drawLine(Matrix4f matrix, VertexConsumer lines, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha) {
-		lines.vertex(matrix, x1, y1, z1).color(red, green, blue, alpha).normal(1, 0, 0);
-		lines.vertex(matrix, x2, y2, z2).color(red, green, blue, alpha).normal(1, 0, 0);
+		lines.vertex(matrix, x1, y1, z1).color(red, green, blue, alpha).normal(1, 1, 1);
+		lines.vertex(matrix, x2, y2, z2).color(red, green, blue, alpha).normal(1, 1, 1);
 	}
 }
