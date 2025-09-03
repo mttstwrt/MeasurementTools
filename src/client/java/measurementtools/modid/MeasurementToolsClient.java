@@ -18,6 +18,7 @@ import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.*;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -190,16 +191,27 @@ public class MeasurementToolsClient implements ClientModInitializer {
 
         matrices.push();
 
-		float midX = (x2 - x1) / 2.0f;
-		float midY = (y2 - y1) / 2.0f;
-		float midZ = (z2 - z1) / 2.0f;
+		double midX = (x2 - x1) / 2.0d;
+        double midY = (y2 - y1) / 2.0d;
+        double midZ = (z2 - z1) / 2.0d;
+
 
 		matrices.translate(midX, midY + 0.1f, midZ);
 		matrices.multiply(MinecraftClient.getInstance().gameRenderer.getCamera().getRotation());
 		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180));
-		matrices.scale(-0.025f, -0.025f, 0.025f); // Negative scale to flip text
+        Matrix4f matrix = matrices.peek().getPositionMatrix();
+
+        // The translation part (world position)
+        Vector3f worldPos = new Vector3f(0, 0, 0);
+        matrix.getTranslation(worldPos);
+
+        Vec3d playerPos = context.camera().getPos();
+        // scale factor for labels based on distance to player
+        float scaleFactor = (float) (0.02d + 0.0025 * Math.sqrt(Math.pow(worldPos.x, 2) + Math.pow(worldPos.y, 2) + Math.pow(worldPos.z, 2)));
+		matrices.scale(-scaleFactor, -scaleFactor, scaleFactor); // Negative scale to flip text
 
 		String numberText = String.valueOf(Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2) + Math.pow(z2 - z1, 2)));
+		//String numberText = String.valueOf(Math.sqrt(Math.pow(worldPos.x, 2) + Math.pow(worldPos.y, 2) + Math.pow(worldPos.z, 2)));
 
 		final TextRenderer textRenderer = MinecraftClient.getInstance().textRenderer;
 		final VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(0));
