@@ -1,239 +1,116 @@
 package measurementtools.modid;
 
+import measurementtools.modid.gui.BlockCountOverlay;
+import measurementtools.modid.gui.RadialMenuRegistry;
+import measurementtools.modid.gui.RadialMenuScreen;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.InputUtil;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.client.util.BufferAllocator;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.*;
-import org.joml.Matrix4f;
-import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import java.util.concurrent.atomic.AtomicReference;
-
-
-
 public class MeasurementToolsClient implements ClientModInitializer {
-	private static final String KEY_CATEGORY = "key.category.blockhighlighter";
-	private static final String KEY_HIGHLIGHT = "key.blockhighlighter.highlight";
-	private static final String KEY_CLEAR = "key.blockhighlighter.clear";
+    private static final KeyBinding.Category KEY_CATEGORY = KeyBinding.Category.create(
+        Identifier.of("measurementtools", "main")
+    );
+    private static final String KEY_MEASURE = "key.measurementtools.measure";
+    private static final String KEY_CLEAR = "key.measurementtools.clear";
 
-	private static KeyBinding keyBindingAddBlock;
-	private static KeyBinding keyBindingClear;
-	private static final List<AtomicReference<BlockPos>> targetedBlocks = new ArrayList<>();
+    private static KeyBinding keyBindingMeasure;
+    private static KeyBinding keyBindingClear;
 
-	@Override
-	public void onInitializeClient() {
-		// Register keybinding (default to 'F')
-		keyBindingAddBlock = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				KEY_HIGHLIGHT,
-				InputUtil.Type.KEYSYM,
-				GLFW.GLFW_KEY_G,
-				KEY_CATEGORY
-		));
-		keyBindingClear = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				KEY_CLEAR,
-				InputUtil.Type.KEYSYM,
-				GLFW.GLFW_KEY_H,
-				KEY_CATEGORY
-		));
+    private long measureKeyPressStart = 0;
+    private boolean radialMenuOpened = false;
+    private static final long HOLD_THRESHOLD_MS = 200;
 
-		// Handle key presses
-		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			if (keyBindingAddBlock.isPressed()) {
-				addHighlight(client);
-			}
-			if (keyBindingClear.isPressed()) {
-				clearHighlight(client);
-			}
-		});
+    @Override
+    public void onInitializeClient() {
+        // Initialize radial menu actions
+        RadialMenuRegistry.initialize();
 
-		// Register render event
-		WorldRenderEvents.BEFORE_DEBUG_RENDER.register(this::renderHighlight);
-	}
+        // Register keybindings
+        keyBindingMeasure = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            KEY_MEASURE,
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_G,
+            KEY_CATEGORY
+        ));
+        keyBindingClear = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+            KEY_CLEAR,
+            InputUtil.Type.KEYSYM,
+            GLFW.GLFW_KEY_H,
+            KEY_CATEGORY
+        ));
 
-	private void addHighlight(MinecraftClient client) {
-		if (client.world == null) return;
+        // Handle input
+        ClientTickEvents.END_CLIENT_TICK.register(this::handleInput);
 
-		AtomicReference<BlockPos> targetBlock = new AtomicReference<>(null);
-		targetBlock.set(getTargetBlock(client));
+        // Register HUD overlay for block counts
+        HudRenderCallback.EVENT.register((context, tickCounter) -> {
+            BlockCountOverlay.getInstance().render(context, tickCounter);
+        });
 
-		if (targetBlock.get() != null) {
-			targetedBlocks.add(targetBlock);
-		}
-	}
+        // Note: World rendering is handled by WorldRendererMixin
+    }
 
-	private void clearHighlight(MinecraftClient client) {
-		targetedBlocks.clear();
-	}
+    private void handleInput(MinecraftClient client) {
+        // Handle measure key (tap to add block, hold to open radial menu)
+        if (keyBindingMeasure.isPressed()) {
+            if (measureKeyPressStart == 0) {
+                measureKeyPressStart = System.currentTimeMillis();
+                radialMenuOpened = false;
+            } else if (!radialMenuOpened &&
+                       System.currentTimeMillis() - measureKeyPressStart > HOLD_THRESHOLD_MS &&
+                       client.currentScreen == null) {
+                // Open radial menu after holding for threshold duration
+                int keyCode = getKeyCode(keyBindingMeasure);
+                client.setScreen(new RadialMenuScreen(keyCode));
+                radialMenuOpened = true;
+            }
+        } else {
+            // Key released
+            if (measureKeyPressStart != 0 && !radialMenuOpened) {
+                // Was a tap - add block to selection
+                addBlockToSelection(client);
+            }
+            measureKeyPressStart = 0;
+            radialMenuOpened = false;
+        }
 
-	private BlockPos getTargetBlock(MinecraftClient client) {
-		// Get player's position and look vector
-		assert client.player != null;
-		Vec3d eyePos = client.player.getEyePos();
-		Vec3d lookVec = client.player.getRotationVec(1.0F);
+        // Handle clear key
+        if (keyBindingClear.wasPressed()) {
+            SelectionManager.getInstance().clearSelection();
+        }
+    }
 
-		double range = 512.0D;
+    private void addBlockToSelection(MinecraftClient client) {
+        if (client.world == null || client.player == null || client.getCameraEntity() == null) return;
 
-		assert client.world != null;
-		assert client.cameraEntity != null;
-		BlockHitResult hitResult = (BlockHitResult) client.cameraEntity.raycast(range, 1.0F, false);
+        HitResult hitResult = client.getCameraEntity().raycast(512.0, 1.0F, false);
+        if (hitResult.getType() == HitResult.Type.BLOCK) {
+            BlockHitResult blockHit = (BlockHitResult) hitResult;
+            SelectionManager.getInstance().addBlock(blockHit.getBlockPos());
+        }
+    }
 
-		// Return block position if found, null otherwise
-		if (hitResult.getType() == HitResult.Type.BLOCK) {
-			return hitResult.getBlockPos();
-		}
-		return null;
-	}
-
-	private void renderHighlight(WorldRenderContext context) {
-
-		if (targetedBlocks.isEmpty()) return;
-		BlockPos initialPos = targetedBlocks.getFirst().get();
-		float minX = initialPos.getX();
-		float minY = initialPos.getY();
-		float minZ = initialPos.getZ();
-		float maxX = initialPos.getX();
-		float maxY = initialPos.getY();
-		float maxZ = initialPos.getZ();
-
-		// Define highlight colors (RGBA)
-		float red = 1.0F;
-		float green = 0.3F;
-		float blue = 0.3F;
-		float alpha = 1.0F;
-
-		for (AtomicReference<BlockPos> targetedBlock : targetedBlocks) {
-			// Only render if highlight is enabled and there's a target block
-			if (targetedBlock.get() == null) return;
-
-			// Only render if the block still exists
-			BlockPos pos = targetedBlock.get();
-
-			// Set min/max position
-			if (pos.getX() < minX) minX = pos.getX();
-			if (pos.getY() < minY) minY = pos.getY();
-			if (pos.getZ() < minZ) minZ = pos.getZ();
-			if (pos.getX() > maxX) maxX = pos.getX();
-			if (pos.getY() > maxY) maxY = pos.getY();
-			if (pos.getZ() > maxZ) maxZ = pos.getZ();
-		}
-
-		// Get rendering context
-		MatrixStack matrices = context.matrixStack();
-		Vec3d camera = context.camera().getPos();
-		VertexConsumerProvider consumers = context.consumers();
-		if (consumers == null) return;
-
-		// Push matrix and translate to block position
-		assert matrices != null;
-		matrices.push();
-		matrices.translate(
-				minX - camera.x,
-				minY - camera.y,
-				minZ - camera.z
-		);
-
-		// Get the block's outline shape for exact dimensions
-		Box box = new Box(0, 0, 0, maxX - minX + 1, maxY - minY + 1, maxZ - minZ + 1);
-
-		// Draw block outline
-		VertexConsumer lines = consumers.getBuffer(RenderLayer.getLines());
-		drawBox(context, matrices, lines, box, red, green, blue, alpha);
-		matrices.pop();
-	}
-
-	private void drawBox(WorldRenderContext context, MatrixStack matrices, VertexConsumer lines, Box box, float red, float green, float blue, float alpha) {
-		float minX = (float)box.minX;
-		float minY = (float)box.minY;
-		float minZ = (float)box.minZ;
-		float maxX = (float)box.maxX;
-		float maxY = (float)box.maxY;
-		float maxZ = (float)box.maxZ;
-
-		// Bottom face
-		drawLineWithNumber(context, matrices, lines, minX, minY, minZ, maxX, minY, minZ, red, green, blue, alpha);
-		drawLineWithNumber(context, matrices, lines, minX, minY, maxZ, maxX, minY, maxZ, red, green, blue, alpha);
-		drawLineWithNumber(context, matrices, lines, minX, minY, minZ, minX, minY, maxZ, red, green, blue, alpha);
-		drawLineWithNumber(context, matrices, lines, maxX, minY, minZ, maxX, minY, maxZ, red, green, blue, alpha);
-
-		// Top face
-		drawLineWithNumber(context, matrices, lines, minX, maxY, minZ, maxX, maxY, minZ, red, green, blue, alpha);
-		drawLineWithNumber(context, matrices, lines, minX, maxY, maxZ, maxX, maxY, maxZ, red, green, blue, alpha);
-		drawLineWithNumber(context, matrices, lines, minX, maxY, minZ, minX, maxY, maxZ, red, green, blue, alpha);
-		drawLineWithNumber(context, matrices, lines, maxX, maxY, minZ, maxX, maxY, maxZ, red, green, blue, alpha);
-
-		// Connecting edges
-		drawLineWithNumber(context, matrices, lines, minX, minY, minZ, minX, maxY, minZ, red, green, blue, alpha);
-		drawLineWithNumber(context, matrices, lines, maxX, minY, minZ, maxX, maxY, minZ, red, green, blue, alpha);
-		drawLineWithNumber(context, matrices, lines, minX, minY, maxZ, minX, maxY, maxZ, red, green, blue, alpha);
-		drawLineWithNumber(context, matrices, lines, maxX, minY, maxZ, maxX, maxY, maxZ, red, green, blue, alpha);
-	}
-
-	private void drawLineWithNumber(WorldRenderContext context, MatrixStack matrices, VertexConsumer lines, float x1, float y1, float z1, float x2, float y2, float z2,
-									float red, float green, float blue, float alpha) {
-		drawLine(matrices.peek().getPositionMatrix(), lines, x1, y1, z1, x2, y2, z2, red, green, blue, alpha);
-
-        matrices.push();
-
-		double midX = (x2 - x1) / 2.0d;
-        double midY = (y2 - y1) / 2.0d;
-        double midZ = (z2 - z1) / 2.0d;
-
-
-		matrices.translate(midX, midY + 0.1f, midZ);
-		matrices.multiply(MinecraftClient.getInstance().gameRenderer.getCamera().getRotation());
-		matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180));
-        Matrix4f matrix = matrices.peek().getPositionMatrix();
-
-        // The translation part (world position)
-        Vector3f worldPos = new Vector3f(0, 0, 0);
-        matrix.getTranslation(worldPos);
-
-        Vec3d playerPos = context.camera().getPos();
-        // scale factor for labels based on distance to player
-        float scaleFactor = (float) (0.02d + 0.0025 * Math.sqrt(Math.pow(worldPos.x, 2) + Math.pow(worldPos.y, 2) + Math.pow(worldPos.z, 2)));
-		matrices.scale(-scaleFactor, -scaleFactor, scaleFactor); // Negative scale to flip text
-
-		String numberText = String.valueOf(Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2) + Math.pow(z2 - z1, 2)));
-		//String numberText = String.valueOf(Math.sqrt(Math.pow(worldPos.x, 2) + Math.pow(worldPos.y, 2) + Math.pow(worldPos.z, 2)));
-
-		final TextRenderer textRenderer = MinecraftClient.getInstance().textRenderer;
-		final VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(0));
-		textRenderer.draw(
-				numberText,
-				0,
-				0,
-				0xFFFFFF,
-				false, // shadow
-				matrices.peek().getPositionMatrix(),
-				immediate,
-				TextRenderer.TextLayerType.SEE_THROUGH,
-				0x80000000,
-				15728880
-		);
-		immediate.draw();
-
-		matrices.pop();
-	}
-
-	private void drawLine(Matrix4f matrix, VertexConsumer lines, float x1, float y1, float z1, float x2, float y2, float z2, float red, float green, float blue, float alpha) {
-		lines.vertex(matrix, x1, y1, z1).color(red, green, blue, alpha).normal(1, 1, 1);
-		lines.vertex(matrix, x2, y2, z2).color(red, green, blue, alpha).normal(1, 1, 1);
-	}
+    private int getKeyCode(KeyBinding keyBinding) {
+        // Get the GLFW key code from the keybinding
+        String translationKey = keyBinding.getBoundKeyTranslationKey();
+        if (translationKey.startsWith("key.keyboard.")) {
+            String keyName = translationKey.substring("key.keyboard.".length());
+            return switch (keyName) {
+                case "g" -> GLFW.GLFW_KEY_G;
+                case "h" -> GLFW.GLFW_KEY_H;
+                case "f" -> GLFW.GLFW_KEY_F;
+                default -> GLFW.GLFW_KEY_G;
+            };
+        }
+        return GLFW.GLFW_KEY_G;
+    }
 }
