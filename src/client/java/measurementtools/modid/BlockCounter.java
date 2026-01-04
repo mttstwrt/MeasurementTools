@@ -1,5 +1,6 @@
 package measurementtools.modid;
 
+import measurementtools.modid.shapes.EllipsoidMode;
 import measurementtools.modid.shapes.ShapeMode;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -139,28 +140,52 @@ public class BlockCounter {
     }
 
     private void countEllipsoid(World world, SelectionManager manager, Map<Block, Integer> counts) {
-        BlockPos center = manager.getCenterBlock();
-        if (center == null) return;
+        double centerX, centerY, centerZ;
+        double radiusX, radiusY, radiusZ;
 
-        double radiusXZ = manager.getMaxRadiusXZ();
-        if (radiusXZ < 0.5) radiusXZ = 0.5;
+        if (manager.getEllipsoidMode() == EllipsoidMode.FIT_TO_BOX) {
+            // Fit ellipsoid inside bounding box
+            BlockPos minPos = manager.getMinPos();
+            BlockPos maxPos = manager.getMaxPos();
+            if (minPos == null || maxPos == null) return;
 
-        int minY = manager.getMinY();
-        int maxY = manager.getMaxY();
-        double radiusY = (maxY - minY + 1) / 2.0;
+            centerX = (minPos.getX() + maxPos.getX() + 1) / 2.0;
+            centerY = (minPos.getY() + maxPos.getY() + 1) / 2.0;
+            centerZ = (minPos.getZ() + maxPos.getZ() + 1) / 2.0;
+
+            radiusX = (maxPos.getX() - minPos.getX() + 1) / 2.0;
+            radiusY = (maxPos.getY() - minPos.getY() + 1) / 2.0;
+            radiusZ = (maxPos.getZ() - minPos.getZ() + 1) / 2.0;
+        } else {
+            // CENTER_RADIUS mode: first block is center, furthest defines XZ radius
+            BlockPos center = manager.getCenterBlock();
+            if (center == null) return;
+
+            centerX = center.getX() + 0.5;
+            centerZ = center.getZ() + 0.5;
+
+            double radiusXZ = manager.getMaxRadiusXZ();
+            if (radiusXZ < 0.5) radiusXZ = 0.5;
+            radiusX = radiusXZ;
+            radiusZ = radiusXZ;
+
+            int minY = manager.getMinY();
+            int maxY = manager.getMaxY();
+            radiusY = (maxY - minY + 1) / 2.0;
+            centerY = (minY + maxY + 1) / 2.0;
+        }
+
+        if (radiusX < 0.5) radiusX = 0.5;
         if (radiusY < 0.5) radiusY = 0.5;
-
-        double centerX = center.getX() + 0.5;
-        double centerY = (minY + maxY + 1) / 2.0;
-        double centerZ = center.getZ() + 0.5;
+        if (radiusZ < 0.5) radiusZ = 0.5;
 
         // Calculate bounding box for iteration
-        int iterMinX = (int) Math.floor(centerX - radiusXZ - 1);
-        int iterMaxX = (int) Math.ceil(centerX + radiusXZ + 1);
+        int iterMinX = (int) Math.floor(centerX - radiusX - 1);
+        int iterMaxX = (int) Math.ceil(centerX + radiusX + 1);
         int iterMinY = (int) Math.floor(centerY - radiusY - 1);
         int iterMaxY = (int) Math.ceil(centerY + radiusY + 1);
-        int iterMinZ = (int) Math.floor(centerZ - radiusXZ - 1);
-        int iterMaxZ = (int) Math.ceil(centerZ + radiusXZ + 1);
+        int iterMinZ = (int) Math.floor(centerZ - radiusZ - 1);
+        int iterMaxZ = (int) Math.ceil(centerZ + radiusZ + 1);
 
         for (int x = iterMinX; x <= iterMaxX; x++) {
             for (int y = iterMinY; y <= iterMaxY; y++) {
@@ -169,13 +194,14 @@ public class BlockCounter {
                     double blockCenterY = y + 0.5;
                     double blockCenterZ = z + 0.5;
 
-                    double dx = (blockCenterX - centerX) / radiusXZ;
+                    double dx = (blockCenterX - centerX) / radiusX;
                     double dy = (blockCenterY - centerY) / radiusY;
-                    double dz = (blockCenterZ - centerZ) / radiusXZ;
+                    double dz = (blockCenterZ - centerZ) / radiusZ;
 
                     double ellipsoidValue = dx * dx + dy * dy + dz * dz;
 
-                    if (ellipsoidValue <= 1.0 + 0.5 / Math.min(radiusXZ, radiusY)) {
+                    double minRadius = Math.min(Math.min(radiusX, radiusY), radiusZ);
+                    if (ellipsoidValue <= 1.0 + 0.5 / minRadius) {
                         BlockPos pos = new BlockPos(x, y, z);
                         addBlockToCount(world, pos, counts);
                     }

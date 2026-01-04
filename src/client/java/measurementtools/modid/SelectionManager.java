@@ -1,5 +1,6 @@
 package measurementtools.modid;
 
+import measurementtools.modid.shapes.EllipsoidMode;
 import measurementtools.modid.shapes.ShapeMode;
 import net.minecraft.util.math.BlockPos;
 
@@ -12,6 +13,7 @@ public class SelectionManager {
 
     private final List<BlockPos> selectedBlocks = new ArrayList<>();
     private ShapeMode currentShapeMode = ShapeMode.RECTANGLE;
+    private EllipsoidMode ellipsoidMode = EllipsoidMode.FIT_TO_BOX;
     private int subdivisionCount = 0;
     private boolean blockCountingEnabled = false;
 
@@ -137,5 +139,13 @@ public class SelectionManager {
 
     public void toggleBlockCounting() {
         this.blockCountingEnabled = !this.blockCountingEnabled;
+    }
+
+    public EllipsoidMode getEllipsoidMode() {
+        return ellipsoidMode;
+    }
+
+    public void setEllipsoidMode(EllipsoidMode mode) {
+        this.ellipsoidMode = mode;
     }
 }
