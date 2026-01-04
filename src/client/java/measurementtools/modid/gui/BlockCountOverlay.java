@@ -41,13 +41,14 @@ public class BlockCountOverlay {
 
         int totalBlocks = BlockCounter.getInstance().getTotalBlockCount();
 
-        int y = PADDING;
-        int x = PADDING;
+        // Calculate total height for vertical centering
+        int visibleRows = Math.min(blockCounts.size(), MAX_VISIBLE_ROWS);
+        int totalHeight = ROW_HEIGHT + visibleRows * ROW_HEIGHT + ROW_HEIGHT; // header + rows + total
 
-        // Draw background panel
-        int panelWidth = calculatePanelWidth(textRenderer, blockCounts);
-        int panelHeight = Math.min(blockCounts.size(), MAX_VISIBLE_ROWS) * ROW_HEIGHT + ROW_HEIGHT + PADDING * 2;
-        context.fill(x - 2, y - 2, x + panelWidth + 4, y + panelHeight, 0xAA000000);
+        // Center vertically on left side
+        int screenHeight = client.getWindow().getScaledHeight();
+        int y = (screenHeight - totalHeight) / 2;
+        int x = PADDING;
 
         // Draw header
         String header = "Block Counts";
@@ -79,31 +80,9 @@ public class BlockCountOverlay {
         }
 
         // Draw total
-        y += 2;
-        context.fill(x - 2, y - 1, x + panelWidth + 4, y, 0xFF555555);
-        y += 3;
+        y += 4;
         String totalText = "Total: " + formatCount(totalBlocks);
         context.drawText(textRenderer, totalText, x + ICON_SIZE + 4, y, 0xFF88FF88, true);
-    }
-
-    private int calculatePanelWidth(TextRenderer textRenderer, Map<Block, Integer> blockCounts) {
-        int maxWidth = textRenderer.getWidth("Block Counts");
-
-        for (Map.Entry<Block, Integer> entry : blockCounts.entrySet()) {
-            String countText = formatCount(entry.getValue());
-            int width = textRenderer.getWidth(countText);
-            if (width > maxWidth) {
-                maxWidth = width;
-            }
-        }
-
-        String totalText = "Total: " + formatCount(BlockCounter.getInstance().getTotalBlockCount());
-        int totalWidth = textRenderer.getWidth(totalText);
-        if (totalWidth > maxWidth) {
-            maxWidth = totalWidth;
-        }
-
-        return ICON_SIZE + 4 + maxWidth + PADDING;
     }
 
     private String formatCount(int count) {

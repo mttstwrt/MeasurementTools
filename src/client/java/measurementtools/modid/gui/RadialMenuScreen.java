@@ -55,13 +55,6 @@ public class RadialMenuScreen extends Screen {
             boolean isHovered = (i == hoveredIndex);
             boolean isEnabled = action.isEnabled();
 
-            // Draw segment arc (filled)
-            int segmentColor = isHovered ? 0xDD555555 : 0xCC333333;
-            if (!isEnabled) {
-                segmentColor = 0x88222222;
-            }
-            drawSegmentFill(context, centerX, centerY, INNER_RADIUS, MENU_RADIUS, startAngle, startAngle + segmentAngle, segmentColor);
-
             // Draw segment outline
             int outlineColor = isHovered ? 0xFFFFFFFF : 0xFF888888;
             drawSegmentOutline(context, centerX, centerY, MENU_RADIUS, startAngle, startAngle + segmentAngle, outlineColor);
@@ -95,21 +88,6 @@ public class RadialMenuScreen extends Screen {
         }
 
         super.render(context, mouseX, mouseY, delta);
-    }
-
-    private void drawSegmentFill(DrawContext context, int cx, int cy, int innerR, int outerR,
-                                  double startAngle, double endAngle, int color) {
-        // Draw filled segment using sparse grid of overlapping rectangles
-        // Only ~100 total calls for all 6 segments
-        for (int r = innerR + 4; r <= outerR - 2; r += 8) {
-            int steps = 4;
-            for (int i = 0; i <= steps; i++) {
-                double angle = startAngle + (endAngle - startAngle) * i / steps;
-                int x = cx + (int) (Math.cos(angle) * r);
-                int y = cy + (int) (Math.sin(angle) * r);
-                context.fill(x - 5, y - 5, x + 5, y + 5, color);
-            }
-        }
     }
 
     private void drawSegmentOutline(DrawContext context, int cx, int cy, int radius,

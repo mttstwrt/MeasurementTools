@@ -20,10 +20,8 @@ public class MeasurementToolsClient implements ClientModInitializer {
         Identifier.of("measurementtools", "main")
     );
     private static final String KEY_MEASURE = "key.measurementtools.measure";
-    private static final String KEY_CLEAR = "key.measurementtools.clear";
 
     private static KeyBinding keyBindingMeasure;
-    private static KeyBinding keyBindingClear;
 
     private long measureKeyPressStart = 0;
     private boolean radialMenuOpened = false;
@@ -34,17 +32,11 @@ public class MeasurementToolsClient implements ClientModInitializer {
         // Initialize radial menu actions
         RadialMenuRegistry.initialize();
 
-        // Register keybindings
+        // Register keybinding
         keyBindingMeasure = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             KEY_MEASURE,
             InputUtil.Type.KEYSYM,
             GLFW.GLFW_KEY_G,
-            KEY_CATEGORY
-        ));
-        keyBindingClear = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-            KEY_CLEAR,
-            InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_H,
             KEY_CATEGORY
         ));
 
@@ -82,11 +74,6 @@ public class MeasurementToolsClient implements ClientModInitializer {
             measureKeyPressStart = 0;
             radialMenuOpened = false;
         }
-
-        // Handle clear key
-        if (keyBindingClear.wasPressed()) {
-            SelectionManager.getInstance().clearSelection();
-        }
     }
 
     private void addBlockToSelection(MinecraftClient client) {
@@ -106,7 +93,6 @@ public class MeasurementToolsClient implements ClientModInitializer {
             String keyName = translationKey.substring("key.keyboard.".length());
             return switch (keyName) {
                 case "g" -> GLFW.GLFW_KEY_G;
-                case "h" -> GLFW.GLFW_KEY_H;
                 case "f" -> GLFW.GLFW_KEY_F;
                 default -> GLFW.GLFW_KEY_G;
             };

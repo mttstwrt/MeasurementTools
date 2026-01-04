@@ -107,9 +107,10 @@ public class EllipsoidRenderer implements ShapeRenderer {
         double cosTheta = Math.cos(theta);
         double sinTheta = Math.sin(theta);
 
+        // Draw full vertical ellipse (0 to 2π) so lines go all the way around
         for (int i = 0; i < segments; i++) {
-            double phi1 = Math.PI * i / segments - Math.PI / 2;
-            double phi2 = Math.PI * (i + 1) / segments - Math.PI / 2;
+            double phi1 = 2 * Math.PI * i / segments;
+            double phi2 = 2 * Math.PI * (i + 1) / segments;
 
             float x1 = (float) (Math.cos(phi1) * radiusXZ * cosTheta);
             float y1 = (float) (Math.sin(phi1) * radiusY);
