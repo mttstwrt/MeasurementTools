@@ -51,7 +51,7 @@ public class BlockCountOverlay {
         int x = PADDING;
 
         // Draw header
-        String header = "Block Counts";
+        String header = "";
         context.drawText(textRenderer, header, x + ICON_SIZE + 4, y + 4, 0xFFFFFF00, true);
         y += ROW_HEIGHT;
 
@@ -81,7 +81,7 @@ public class BlockCountOverlay {
 
         // Draw total
         y += 4;
-        String totalText = "Total: " + formatCount(totalBlocks);
+        String totalText = formatCount(totalBlocks);
         context.drawText(textRenderer, totalText, x + ICON_SIZE + 4, y, 0xFF88FF88, true);
     }
 
