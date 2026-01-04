@@ -10,6 +10,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
@@ -52,7 +53,10 @@ public class MeasurementToolsClient implements ClientModInitializer {
     }
 
     private void handleInput(MinecraftClient client) {
-        // Handle measure key (tap to add block, hold to open radial menu)
+        // Update paste preview position every tick if active
+        updatePastePreview(client);
+
+        // Handle measure key (tap to add block OR confirm paste, hold to open radial menu)
         if (keyBindingMeasure.isPressed()) {
             if (measureKeyPressStart == 0) {
                 measureKeyPressStart = System.currentTimeMillis();
@@ -68,11 +72,46 @@ public class MeasurementToolsClient implements ClientModInitializer {
         } else {
             // Key released
             if (measureKeyPressStart != 0 && !radialMenuOpened) {
-                // Was a tap - add block to selection
-                addBlockToSelection(client);
+                // Was a tap
+                ClipboardManager clipboard = ClipboardManager.getInstance();
+                if (clipboard.isPastePreviewActive()) {
+                    // Confirm paste - lock the current placement
+                    confirmPaste(client);
+                } else {
+                    // Normal behavior - add block to selection
+                    addBlockToSelection(client);
+                }
             }
             measureKeyPressStart = 0;
             radialMenuOpened = false;
+        }
+    }
+
+    private void updatePastePreview(MinecraftClient client) {
+        ClipboardManager clipboard = ClipboardManager.getInstance();
+        if (!clipboard.isPastePreviewActive()) return;
+
+        if (client.world == null || client.getCameraEntity() == null) return;
+
+        HitResult hitResult = client.getCameraEntity().raycast(512.0, 1.0F, false);
+        if (hitResult.getType() == HitResult.Type.BLOCK) {
+            BlockHitResult blockHit = (BlockHitResult) hitResult;
+            // Set anchor to the block adjacent to the hit face (where player would place a block)
+            clipboard.setPreviewAnchorPos(blockHit.getBlockPos().offset(blockHit.getSide()));
+        }
+    }
+
+    private void confirmPaste(MinecraftClient client) {
+        ClipboardManager clipboard = ClipboardManager.getInstance();
+
+        if (clipboard.getPreviewAnchorPos() != null) {
+            // Lock the current placement
+            clipboard.lockCurrentPlacement();
+
+            // Show confirmation message
+            if (client.player != null) {
+                client.player.sendMessage(Text.literal("Ghost blocks placed"), true);
+            }
         }
     }
 

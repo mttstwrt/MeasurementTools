@@ -1,7 +1,9 @@
 package measurementtools.modid.gui;
 
+import measurementtools.modid.ClipboardManager;
 import measurementtools.modid.SelectionManager;
 import measurementtools.modid.shapes.ShapeMode;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
 
 import java.util.ArrayList;
@@ -23,7 +25,7 @@ public class RadialMenuRegistry {
         // Clear any existing actions (in case of reload)
         actions.clear();
 
-        // Clear Selection
+        // Clear Selection (also clears locked ghost placements)
         register(new RadialMenuAction() {
             @Override
             public Text getName() {
@@ -33,6 +35,34 @@ public class RadialMenuRegistry {
             @Override
             public void execute() {
                 SelectionManager.getInstance().clearSelection();
+                ClipboardManager.getInstance().clearLockedPlacements();
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return SelectionManager.getInstance().hasSelection() ||
+                       !ClipboardManager.getInstance().getLockedPlacements().isEmpty();
+            }
+
+            @Override
+            public int getColor() {
+                return 0xFF6666;
+            }
+        });
+
+        // Copy Selection
+        register(new RadialMenuAction() {
+            @Override
+            public Text getName() {
+                return Text.literal("Copy");
+            }
+
+            @Override
+            public void execute() {
+                MinecraftClient client = MinecraftClient.getInstance();
+                if (client.world != null) {
+                    ClipboardManager.getInstance().copySelection(client.world);
+                }
             }
 
             @Override
@@ -42,7 +72,46 @@ public class RadialMenuRegistry {
 
             @Override
             public int getColor() {
-                return 0xFF6666;
+                return ClipboardManager.getInstance().hasClipboardData()
+                    ? 0x66FFFF : 0xFFFFFF;
+            }
+        });
+
+        // Paste (toggle preview mode)
+        register(new RadialMenuAction() {
+            @Override
+            public Text getName() {
+                ClipboardManager clipboard = ClipboardManager.getInstance();
+                if (clipboard.isPastePreviewActive()) {
+                    return Text.literal("Cancel Paste");
+                }
+                return Text.literal("Paste");
+            }
+
+            @Override
+            public void execute() {
+                ClipboardManager clipboard = ClipboardManager.getInstance();
+                if (clipboard.isPastePreviewActive()) {
+                    // Cancel paste preview
+                    clipboard.setPastePreviewActive(false);
+                } else {
+                    // Start paste preview
+                    clipboard.setPastePreviewActive(true);
+                }
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return ClipboardManager.getInstance().hasClipboardData();
+            }
+
+            @Override
+            public int getColor() {
+                ClipboardManager clipboard = ClipboardManager.getInstance();
+                if (clipboard.isPastePreviewActive()) {
+                    return 0xFF6666; // Red when canceling
+                }
+                return clipboard.hasClipboardData() ? 0x66FF66 : 0x888888;
             }
         });
 

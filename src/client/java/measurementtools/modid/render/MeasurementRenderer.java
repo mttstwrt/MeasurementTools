@@ -16,6 +16,7 @@ public class MeasurementRenderer {
 
     private final Map<ShapeMode, ShapeRenderer> renderers = new EnumMap<>(ShapeMode.class);
     private final SubdivisionRenderer subdivisionRenderer = new SubdivisionRenderer();
+    private final GhostBlockRenderer ghostBlockRenderer = new GhostBlockRenderer();
 
     private MeasurementRenderer() {
         renderers.put(ShapeMode.RECTANGLE, new RectangleRenderer());
@@ -29,35 +30,40 @@ public class MeasurementRenderer {
 
     public void render(Camera camera, Matrix4f viewMatrix) {
         SelectionManager manager = SelectionManager.getInstance();
-        if (!manager.hasSelection()) return;
 
-        List<BlockPos> selection = manager.getSelectedBlocks();
-        ShapeMode mode = manager.getShapeMode();
-        int subdivisions = manager.getSubdivisionCount();
+        // Render selection shapes if there's a selection
+        if (manager.hasSelection()) {
+            List<BlockPos> selection = manager.getSelectedBlocks();
+            ShapeMode mode = manager.getShapeMode();
+            int subdivisions = manager.getSubdivisionCount();
 
-        ShapeRenderer.RenderConfig config = new ShapeRenderer.RenderConfig(
-            1.0f, 0.3f, 0.3f, 1.0f,
-            subdivisions,
-            true
-        );
+            ShapeRenderer.RenderConfig config = new ShapeRenderer.RenderConfig(
+                1.0f, 0.3f, 0.3f, 1.0f,
+                subdivisions,
+                true
+            );
 
-        // Render the shape
-        ShapeRenderer renderer = renderers.get(mode);
-        if (renderer != null) {
-            renderer.render(camera, viewMatrix, selection, config);
-        }
+            // Render the shape
+            ShapeRenderer renderer = renderers.get(mode);
+            if (renderer != null) {
+                renderer.render(camera, viewMatrix, selection, config);
+            }
 
-        // Render subdivisions if enabled (only for rectangle mode)
-        if (subdivisions > 1 && mode == ShapeMode.RECTANGLE) {
-            BlockPos minPos = manager.getMinPos();
-            BlockPos maxPos = manager.getMaxPos();
-            if (minPos != null && maxPos != null) {
-                Box bounds = new Box(
-                    minPos.getX(), minPos.getY(), minPos.getZ(),
-                    maxPos.getX() + 1, maxPos.getY() + 1, maxPos.getZ() + 1
-                );
-                subdivisionRenderer.renderSubdivisions(camera, viewMatrix, bounds, subdivisions, 1.0f);
+            // Render subdivisions if enabled (only for rectangle mode)
+            if (subdivisions > 1 && mode == ShapeMode.RECTANGLE) {
+                BlockPos minPos = manager.getMinPos();
+                BlockPos maxPos = manager.getMaxPos();
+                if (minPos != null && maxPos != null) {
+                    Box bounds = new Box(
+                        minPos.getX(), minPos.getY(), minPos.getZ(),
+                        maxPos.getX() + 1, maxPos.getY() + 1, maxPos.getZ() + 1
+                    );
+                    subdivisionRenderer.renderSubdivisions(camera, viewMatrix, bounds, subdivisions, 1.0f);
+                }
             }
         }
+
+        // Render ghost blocks (paste preview and locked placements) - always render
+        ghostBlockRenderer.render(camera, viewMatrix);
     }
 }

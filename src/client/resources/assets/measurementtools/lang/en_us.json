@@ -1,0 +1,22 @@
+{
+    "key.category.measurementtools.main": "Measurement Tools",
+    "key.measurementtools.measure": "Measure/Select Block",
+
+    "measurementtools.gui.radial_menu": "Measurement Options",
+
+    "measurementtools.action.clear": "Clear Selection",
+    "measurementtools.action.shape.rectangle": "Rectangle",
+    "measurementtools.action.shape.cylinder": "Cylinder",
+    "measurementtools.action.shape.ellipsoid": "Ellipsoid",
+    "measurementtools.action.subdivide": "Subdivide: %s",
+    "measurementtools.action.subdivide.none": "No Subdivisions",
+    "measurementtools.action.count.on": "Count: On",
+    "measurementtools.action.count.off": "Count: Off",
+
+    "measurementtools.shape.rectangle": "Rectangle",
+    "measurementtools.shape.cylinder": "Cylinder",
+    "measurementtools.shape.ellipsoid": "Ellipsoid",
+
+    "measurementtools.overlay.block_counts": "Block Counts",
+    "measurementtools.overlay.total": "Total: %s"
+}
