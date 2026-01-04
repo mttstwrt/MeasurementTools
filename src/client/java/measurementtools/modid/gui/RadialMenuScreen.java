@@ -99,95 +99,46 @@ public class RadialMenuScreen extends Screen {
 
     private void drawSegmentFill(DrawContext context, int cx, int cy, int innerR, int outerR,
                                   double startAngle, double endAngle, int color) {
-        int steps = 20;
-        double angleStep = (endAngle - startAngle) / steps;
-
-        for (int i = 0; i < steps; i++) {
-            double a1 = startAngle + i * angleStep;
-            double a2 = startAngle + (i + 1) * angleStep;
-
-            // Calculate quad corners
-            int ix1 = cx + (int) (Math.cos(a1) * innerR);
-            int iy1 = cy + (int) (Math.sin(a1) * innerR);
-            int ox1 = cx + (int) (Math.cos(a1) * outerR);
-            int oy1 = cy + (int) (Math.sin(a1) * outerR);
-            int ix2 = cx + (int) (Math.cos(a2) * innerR);
-            int iy2 = cy + (int) (Math.sin(a2) * innerR);
-            int ox2 = cx + (int) (Math.cos(a2) * outerR);
-            int oy2 = cy + (int) (Math.sin(a2) * outerR);
-
-            // Fill with horizontal scanlines
-            int minY = Math.min(Math.min(iy1, iy2), Math.min(oy1, oy2));
-            int maxY = Math.max(Math.max(iy1, iy2), Math.max(oy1, oy2));
-
-            for (int y = minY; y <= maxY; y++) {
-                // Find x range at this y
-                int minX = Math.min(Math.min(ix1, ix2), Math.min(ox1, ox2));
-                int maxX = Math.max(Math.max(ix1, ix2), Math.max(ox1, ox2));
-                context.fill(minX, y, maxX, y + 1, color);
+        // Draw filled segment using sparse grid of overlapping rectangles
+        // Only ~100 total calls for all 6 segments
+        for (int r = innerR + 4; r <= outerR - 2; r += 8) {
+            int steps = 4;
+            for (int i = 0; i <= steps; i++) {
+                double angle = startAngle + (endAngle - startAngle) * i / steps;
+                int x = cx + (int) (Math.cos(angle) * r);
+                int y = cy + (int) (Math.sin(angle) * r);
+                context.fill(x - 5, y - 5, x + 5, y + 5, color);
             }
         }
     }
 
     private void drawSegmentOutline(DrawContext context, int cx, int cy, int radius,
                                     double startAngle, double endAngle, int color) {
-        int steps = 16;
-        double angleStep = (endAngle - startAngle) / steps;
-
-        int prevX = cx + (int) (Math.cos(startAngle) * radius);
-        int prevY = cy + (int) (Math.sin(startAngle) * radius);
-
-        for (int i = 1; i <= steps; i++) {
-            double angle = startAngle + i * angleStep;
+        // Draw arc outline with minimal rectangles
+        int steps = 5;
+        for (int i = 0; i <= steps; i++) {
+            double angle = startAngle + (endAngle - startAngle) * i / steps;
             int x = cx + (int) (Math.cos(angle) * radius);
             int y = cy + (int) (Math.sin(angle) * radius);
-            drawLine(context, prevX, prevY, x, y, color);
-            prevX = x;
-            prevY = y;
+            context.fill(x - 1, y - 1, x + 2, y + 2, color);
         }
     }
 
     private void drawCircleOutline(DrawContext context, int cx, int cy, int radius, int color) {
-        int steps = 32;
-        double angleStep = 2 * Math.PI / steps;
-
-        int prevX = cx + radius;
-        int prevY = cy;
-
-        for (int i = 1; i <= steps; i++) {
-            double angle = i * angleStep;
+        int steps = 12;
+        for (int i = 0; i < steps; i++) {
+            double angle = 2 * Math.PI * i / steps;
             int x = cx + (int) (Math.cos(angle) * radius);
             int y = cy + (int) (Math.sin(angle) * radius);
-            drawLine(context, prevX, prevY, x, y, color);
-            prevX = x;
-            prevY = y;
-        }
-    }
-
-    private void drawLine(DrawContext context, int x1, int y1, int x2, int y2, int color) {
-        int dx = Math.abs(x2 - x1);
-        int dy = Math.abs(y2 - y1);
-        int steps = Math.max(dx, dy);
-
-        if (steps == 0) {
-            context.fill(x1, y1, x1 + 1, y1 + 1, color);
-            return;
-        }
-
-        float xStep = (float) (x2 - x1) / steps;
-        float yStep = (float) (y2 - y1) / steps;
-
-        for (int i = 0; i <= steps; i++) {
-            int x = x1 + (int) (i * xStep);
-            int y = y1 + (int) (i * yStep);
-            context.fill(x, y, x + 1, y + 1, color);
+            context.fill(x - 1, y - 1, x + 2, y + 2, color);
         }
     }
 
     private void drawFilledCircle(DrawContext context, int cx, int cy, int radius, int color) {
-        for (int y = -radius; y <= radius; y++) {
+        // Draw filled circle with horizontal slices - step by 4 for fewer calls
+        for (int y = -radius; y <= radius; y += 4) {
             int halfWidth = (int) Math.sqrt(radius * radius - y * y);
-            context.fill(cx - halfWidth, cy + y, cx + halfWidth, cy + y + 1, color);
+            context.fill(cx - halfWidth, cy + y, cx + halfWidth, cy + y + 4, color);
         }
     }
 
