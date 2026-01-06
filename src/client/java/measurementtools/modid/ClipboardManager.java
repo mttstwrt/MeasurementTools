@@ -120,6 +120,10 @@ public class ClipboardManager {
     }
 
     public void clearLockedPlacements() {
+        // Clear each placement's block map before clearing the list to help GC
+        for (LockedPlacement placement : lockedPlacements) {
+            placement.clear();
+        }
         lockedPlacements.clear();
     }
 
@@ -147,6 +151,13 @@ public class ClipboardManager {
 
         public Map<BlockPos, BlockState> getBlocks() {
             return blocks;
+        }
+
+        /**
+         * Clears the internal block map to help garbage collection.
+         */
+        void clear() {
+            blocks.clear();
         }
     }
 }

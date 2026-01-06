@@ -1,6 +1,7 @@
 package measurementtools.modid.render;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import org.lwjgl.opengl.GL11;
 import measurementtools.modid.ClipboardManager;
 import measurementtools.modid.ModConfig;
 import net.minecraft.block.BlockRenderType;
@@ -17,12 +18,22 @@ import net.minecraft.client.util.BufferAllocator;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.LightType;
 import net.minecraft.world.World;
 import org.joml.Matrix4f;
 
 import java.util.Map;
 
 public class GhostBlockRenderer {
+    // Reusable buffer allocators to prevent memory leaks and reduce allocations
+    private BufferAllocator wireframeBuffer;
+    private BufferAllocator solidBuffer;
+
+    // Track buffer sizes for reallocation when needed
+    private int lastSolidBlockCount = 0;
+    private static final int WIREFRAME_BUFFER_SIZE = 16384;
+    private static final int BYTES_PER_BLOCK = 2048; // Reduced from 4096
+    private static final int MIN_SOLID_BUFFER_SIZE = 32768;
 
     public void render(Camera camera, Matrix4f viewMatrix) {
         ClipboardManager clipboard = ClipboardManager.getInstance();
@@ -62,6 +73,40 @@ public class GhostBlockRenderer {
         }
     }
 
+    private BufferAllocator getOrCreateWireframeBuffer() {
+        if (wireframeBuffer == null) {
+            wireframeBuffer = new BufferAllocator(WIREFRAME_BUFFER_SIZE);
+        }
+        return wireframeBuffer;
+    }
+
+    private BufferAllocator getOrCreateSolidBuffer(int blockCount) {
+        int requiredSize = Math.max(MIN_SOLID_BUFFER_SIZE, blockCount * BYTES_PER_BLOCK);
+        // Reallocate if we need more space or if count dropped significantly (to free memory)
+        if (solidBuffer == null || lastSolidBlockCount * BYTES_PER_BLOCK < requiredSize / 2 || requiredSize > lastSolidBlockCount * BYTES_PER_BLOCK) {
+            if (solidBuffer != null) {
+                solidBuffer.close();
+            }
+            solidBuffer = new BufferAllocator(requiredSize);
+            lastSolidBlockCount = blockCount;
+        }
+        return solidBuffer;
+    }
+
+    /**
+     * Cleans up resources when the renderer is no longer needed.
+     */
+    public void cleanup() {
+        if (wireframeBuffer != null) {
+            wireframeBuffer.close();
+            wireframeBuffer = null;
+        }
+        if (solidBuffer != null) {
+            solidBuffer.close();
+            solidBuffer = null;
+        }
+    }
+
     private void renderWireframeBlocks(Matrix4f viewMatrix, Vec3d cameraPos, World world,
                                        BlockPos anchor, Map<BlockPos, BlockState> blocks,
                                        boolean isPreview, float opacity) {
@@ -70,7 +115,8 @@ public class GhostBlockRenderer {
         MatrixStack matrices = new MatrixStack();
         matrices.multiplyPositionMatrix(viewMatrix);
 
-        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(16384));
+        BufferAllocator buffer = getOrCreateWireframeBuffer();
+        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(buffer);
         VertexConsumer lines = immediate.getBuffer(RenderLayer.getLines());
 
         Matrix4f matrix = matrices.peek().getPositionMatrix();
@@ -120,14 +166,16 @@ public class GhostBlockRenderer {
         MatrixStack matrices = new MatrixStack();
         matrices.multiplyPositionMatrix(viewMatrix);
 
-        // Create vertex consumer provider
-        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(blocks.size() * 4096));
+        // Use reusable buffer
+        BufferAllocator buffer = getOrCreateSolidBuffer(blocks.size());
+        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(buffer);
 
         // Wrap the provider to apply alpha to all vertex colors
         VertexConsumerProvider alphaProvider = new AlphaVertexConsumerProvider(immediate, opacity, isPreview);
 
-        // Full brightness for ghost blocks
-        int light = LightmapTextureManager.MAX_LIGHT_COORDINATE;
+        // Enable polygon offset to prevent z-fighting with real blocks
+        GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL);
+        GL11.glPolygonOffset(-1.0f, -1.0f);
 
         for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
             BlockPos relativePos = entry.getKey();
@@ -140,6 +188,12 @@ public class GhostBlockRenderer {
 
             // Calculate world position
             BlockPos worldPos = anchor.add(relativePos);
+
+            // Get actual world lighting for this position (reduces brightness issues)
+            int light = LightmapTextureManager.pack(
+                world.getLightLevel(LightType.BLOCK, worldPos),
+                world.getLightLevel(LightType.SKY, worldPos)
+            );
 
             // Push matrix for this block
             matrices.push();
@@ -165,6 +219,9 @@ public class GhostBlockRenderer {
 
         // Draw all buffered block geometry
         immediate.draw();
+
+        // Disable polygon offset
+        GL11.glDisable(GL11.GL_POLYGON_OFFSET_FILL);
     }
 
     /**
