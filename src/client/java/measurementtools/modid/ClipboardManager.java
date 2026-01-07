@@ -137,12 +137,23 @@ public class ClipboardManager {
      * Represents a locked ghost block placement at a specific anchor position.
      */
     public static class LockedPlacement {
+        private static long nextId = 0;
+
+        private final long id;
         private final BlockPos anchorPos;
         private final Map<BlockPos, BlockState> blocks;
+        // Pre-computed set of blocks that have at least one exposed face
+        private Map<BlockPos, BlockState> visibleBlocks;
 
         public LockedPlacement(BlockPos anchorPos, Map<BlockPos, BlockState> blocks) {
+            this.id = nextId++;
             this.anchorPos = anchorPos;
             this.blocks = blocks;
+            this.visibleBlocks = null; // Computed lazily
+        }
+
+        public long getId() {
+            return id;
         }
 
         public BlockPos getAnchorPos() {
@@ -154,10 +165,42 @@ public class ClipboardManager {
         }
 
         /**
+         * Returns only blocks that have at least one exposed face (not surrounded on all sides).
+         * This is computed once and cached.
+         */
+        public Map<BlockPos, BlockState> getVisibleBlocks() {
+            if (visibleBlocks == null) {
+                visibleBlocks = computeVisibleBlocks();
+            }
+            return visibleBlocks;
+        }
+
+        private Map<BlockPos, BlockState> computeVisibleBlocks() {
+            Map<BlockPos, BlockState> visible = new HashMap<>();
+            for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
+                BlockPos pos = entry.getKey();
+                // Check if any adjacent position is empty (has exposed face)
+                if (!blocks.containsKey(pos.up()) ||
+                    !blocks.containsKey(pos.down()) ||
+                    !blocks.containsKey(pos.north()) ||
+                    !blocks.containsKey(pos.south()) ||
+                    !blocks.containsKey(pos.east()) ||
+                    !blocks.containsKey(pos.west())) {
+                    visible.put(pos, entry.getValue());
+                }
+            }
+            return visible;
+        }
+
+        /**
          * Clears the internal block map to help garbage collection.
          */
         void clear() {
             blocks.clear();
+            if (visibleBlocks != null) {
+                visibleBlocks.clear();
+                visibleBlocks = null;
+            }
         }
     }
 }

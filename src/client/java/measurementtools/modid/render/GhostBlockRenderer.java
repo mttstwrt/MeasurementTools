@@ -8,6 +8,7 @@ import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
+import net.minecraft.client.render.Frustum;
 import net.minecraft.client.render.LightmapTextureManager;
 import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
@@ -17,12 +18,16 @@ import net.minecraft.client.render.block.BlockRenderManager;
 import net.minecraft.client.util.BufferAllocator;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.LightType;
 import net.minecraft.world.World;
 import org.joml.Matrix4f;
 
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 
 public class GhostBlockRenderer {
     // Reusable buffer allocators to prevent memory leaks and reduce allocations
@@ -34,6 +39,20 @@ public class GhostBlockRenderer {
     private static final int WIREFRAME_BUFFER_SIZE = 16384;
     private static final int BYTES_PER_BLOCK = 2048; // Reduced from 4096
     private static final int MIN_SOLID_BUFFER_SIZE = 32768;
+
+    // Maximum render distance for ghost blocks (in blocks)
+    private static final double MAX_RENDER_DISTANCE_SQ = 128.0 * 128.0;
+
+    // Cache for visible blocks in preview (computed once per clipboard change)
+    private Map<BlockPos, BlockState> cachedPreviewVisibleBlocks;
+    private int lastClipboardSize = -1;
+
+    // Frustum for culling (set each frame from WorldRenderer)
+    private Frustum frustum;
+
+    public void setFrustum(Frustum frustum) {
+        this.frustum = frustum;
+    }
 
     public void render(Camera camera, Matrix4f viewMatrix) {
         ClipboardManager clipboard = ClipboardManager.getInstance();
@@ -48,14 +67,69 @@ public class GhostBlockRenderer {
         if (clipboard.isPastePreviewActive() && clipboard.hasClipboardData()) {
             BlockPos anchor = clipboard.getPreviewAnchorPos();
             if (anchor != null) {
-                renderGhostBlocks(camera, viewMatrix, cameraPos, world, anchor, clipboard.getClipboardBlocks(), true);
+                // Use cached visible blocks for preview
+                Map<BlockPos, BlockState> visibleBlocks = getPreviewVisibleBlocks(clipboard.getClipboardBlocks());
+                renderGhostBlocks(camera, viewMatrix, cameraPos, world, anchor, visibleBlocks, true);
             }
         }
 
-        // Render all locked placements
+        // Render all locked placements (use pre-computed visible blocks)
         for (ClipboardManager.LockedPlacement placement : clipboard.getLockedPlacements()) {
-            renderGhostBlocks(camera, viewMatrix, cameraPos, world, placement.getAnchorPos(), placement.getBlocks(), false);
+            // Use the optimized visible blocks instead of all blocks
+            renderGhostBlocks(camera, viewMatrix, cameraPos, world,
+                placement.getAnchorPos(), placement.getVisibleBlocks(), false);
         }
+    }
+
+    /**
+     * Gets visible blocks for preview, caching the computation.
+     */
+    private Map<BlockPos, BlockState> getPreviewVisibleBlocks(Map<BlockPos, BlockState> clipboardBlocks) {
+        if (clipboardBlocks.size() != lastClipboardSize || cachedPreviewVisibleBlocks == null) {
+            cachedPreviewVisibleBlocks = computeVisibleBlocks(clipboardBlocks);
+            lastClipboardSize = clipboardBlocks.size();
+        }
+        return cachedPreviewVisibleBlocks;
+    }
+
+    /**
+     * Computes which blocks have at least one exposed face.
+     */
+    private Map<BlockPos, BlockState> computeVisibleBlocks(Map<BlockPos, BlockState> blocks) {
+        Map<BlockPos, BlockState> visible = new HashMap<>();
+        for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
+            BlockPos pos = entry.getKey();
+            // Check if any adjacent position is empty (has exposed face)
+            if (!blocks.containsKey(pos.up()) ||
+                !blocks.containsKey(pos.down()) ||
+                !blocks.containsKey(pos.north()) ||
+                !blocks.containsKey(pos.south()) ||
+                !blocks.containsKey(pos.east()) ||
+                !blocks.containsKey(pos.west())) {
+                visible.put(pos, entry.getValue());
+            }
+        }
+        return visible;
+    }
+
+    /**
+     * Checks if a block position is within render distance and frustum.
+     */
+    private boolean isBlockVisible(BlockPos worldPos, Vec3d cameraPos) {
+        // Distance check
+        double dx = worldPos.getX() + 0.5 - cameraPos.x;
+        double dy = worldPos.getY() + 0.5 - cameraPos.y;
+        double dz = worldPos.getZ() + 0.5 - cameraPos.z;
+        if (dx * dx + dy * dy + dz * dz > MAX_RENDER_DISTANCE_SQ) {
+            return false;
+        }
+
+        // Frustum check (if available)
+        if (frustum != null) {
+            return frustum.isVisible(new Box(worldPos));
+        }
+
+        return true;
     }
 
     private void renderGhostBlocks(Camera camera, Matrix4f viewMatrix, Vec3d cameraPos, World world,
@@ -121,12 +195,20 @@ public class GhostBlockRenderer {
 
         Matrix4f matrix = matrices.peek().getPositionMatrix();
 
+        int renderedCount = 0;
         for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
             BlockPos relativePos = entry.getKey();
             BlockState state = entry.getValue();
 
             // Calculate world position
             BlockPos worldPos = anchor.add(relativePos);
+
+            // Frustum and distance culling
+            if (!isBlockVisible(worldPos, cameraPos)) {
+                continue;
+            }
+
+            renderedCount++;
 
             // Get block color from map color
             int mapColor = state.getMapColor(world, worldPos).color;
@@ -166,8 +248,19 @@ public class GhostBlockRenderer {
         MatrixStack matrices = new MatrixStack();
         matrices.multiplyPositionMatrix(viewMatrix);
 
-        // Use reusable buffer
-        BufferAllocator buffer = getOrCreateSolidBuffer(blocks.size());
+        // Count visible blocks first for buffer sizing
+        int visibleCount = 0;
+        for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
+            BlockPos worldPos = anchor.add(entry.getKey());
+            if (isBlockVisible(worldPos, cameraPos) && entry.getValue().getRenderType() != BlockRenderType.INVISIBLE) {
+                visibleCount++;
+            }
+        }
+
+        if (visibleCount == 0) return;
+
+        // Use reusable buffer sized for visible blocks only
+        BufferAllocator buffer = getOrCreateSolidBuffer(visibleCount);
         VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(buffer);
 
         // Wrap the provider to apply alpha to all vertex colors
@@ -188,6 +281,11 @@ public class GhostBlockRenderer {
 
             // Calculate world position
             BlockPos worldPos = anchor.add(relativePos);
+
+            // Frustum and distance culling
+            if (!isBlockVisible(worldPos, cameraPos)) {
+                continue;
+            }
 
             // Get actual world lighting for this position (reduces brightness issues)
             int light = LightmapTextureManager.pack(
@@ -248,13 +346,23 @@ public class GhostBlockRenderer {
     }
 
     /**
-     * A VertexConsumer wrapper that modifies the alpha channel of all vertices.
-     * This approach is shader-compatible as it modifies vertex data directly.
+     * A VertexConsumer wrapper that modifies the alpha channel of all vertices
+     * and applies directional face shading to match normal block rendering.
      */
     private static class AlphaVertexConsumer implements VertexConsumer {
         private final VertexConsumer delegate;
         private final int alpha;
         private final boolean isPreview;
+        // Pending color values to be modified by shade before sending
+        private int pendingRed, pendingGreen, pendingBlue;
+        private boolean hasColor = false;
+        private float shade = 1.0f;
+
+        // Minecraft's directional shading values
+        private static final float SHADE_DOWN = 0.5f;
+        private static final float SHADE_UP = 1.0f;
+        private static final float SHADE_NORTH_SOUTH = 0.8f;
+        private static final float SHADE_EAST_WEST = 0.6f;
 
         public AlphaVertexConsumer(VertexConsumer delegate, float alpha, boolean isPreview) {
             this.delegate = delegate;
@@ -270,14 +378,11 @@ public class GhostBlockRenderer {
 
         @Override
         public VertexConsumer color(int red, int green, int blue, int alpha) {
-            // Apply preview tint if needed
-            if (isPreview) {
-                red = (int) (red * 0.85f);
-                green = (int) (green * 0.85f);
-                blue = Math.min(255, (int) (blue * 0.85f + 38)); // Add blue tint
-            }
-            // Use our alpha instead of the provided alpha
-            delegate.color(red, green, blue, this.alpha);
+            // Store color to be modified by shade when normal is set
+            pendingRed = red;
+            pendingGreen = green;
+            pendingBlue = blue;
+            hasColor = true;
             return this;
         }
 
@@ -301,6 +406,40 @@ public class GhostBlockRenderer {
 
         @Override
         public VertexConsumer normal(float x, float y, float z) {
+            // Calculate shade based on face normal direction (mimics Minecraft's directional lighting)
+            // Determine dominant axis
+            float absX = Math.abs(x);
+            float absY = Math.abs(y);
+            float absZ = Math.abs(z);
+
+            if (absY >= absX && absY >= absZ) {
+                // Y-dominant: top or bottom face
+                shade = y > 0 ? SHADE_UP : SHADE_DOWN;
+            } else if (absX >= absZ) {
+                // X-dominant: east or west face
+                shade = SHADE_EAST_WEST;
+            } else {
+                // Z-dominant: north or south face
+                shade = SHADE_NORTH_SOUTH;
+            }
+
+            // Now flush the pending color with shade applied
+            if (hasColor) {
+                int red = (int) (pendingRed * shade);
+                int green = (int) (pendingGreen * shade);
+                int blue = (int) (pendingBlue * shade);
+
+                // Apply preview tint if needed
+                if (isPreview) {
+                    red = (int) (red * 0.85f);
+                    green = (int) (green * 0.85f);
+                    blue = Math.min(255, (int) (blue * 0.85f + 38));
+                }
+
+                delegate.color(red, green, blue, this.alpha);
+                hasColor = false;
+            }
+
             delegate.normal(x, y, z);
             return this;
         }
