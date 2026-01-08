@@ -2,6 +2,7 @@ package measurementtools.modid;
 
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.BlockRotation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
@@ -19,6 +20,17 @@ public class ClipboardManager {
     // Paste preview state
     private boolean pastePreviewActive = false;
     private BlockPos previewAnchorPos = null;
+
+    // Rotation state (0, 1, 2, 3 = 0°, 90°, 180°, 270° clockwise around Y axis)
+    private int previewRotation = 0;
+
+    // Cached rotated blocks (invalidated when rotation changes)
+    private Map<BlockPos, BlockState> rotatedClipboardBlocks = null;
+    private int cachedRotation = -1;
+
+    // Clipboard dimensions for rotation pivot
+    private int clipboardSizeX = 0;
+    private int clipboardSizeZ = 0;
 
     // Locked placements: each entry is (anchorPos, relativeBlocks with states)
     private final List<LockedPlacement> lockedPlacements = new ArrayList<>();
@@ -40,6 +52,9 @@ public class ClipboardManager {
         }
 
         clipboardBlocks.clear();
+        rotatedClipboardBlocks = null;
+        cachedRotation = -1;
+        previewRotation = 0;
 
         BlockPos origin = manager.getMinPos();
         if (origin == null) return;
@@ -56,6 +71,10 @@ public class ClipboardManager {
         // Also capture all blocks within the bounding box (not just selected positions)
         BlockPos maxPos = manager.getMaxPos();
         if (maxPos != null) {
+            // Store clipboard dimensions for rotation
+            clipboardSizeX = maxPos.getX() - origin.getX();
+            clipboardSizeZ = maxPos.getZ() - origin.getZ();
+
             for (int x = origin.getX(); x <= maxPos.getX(); x++) {
                 for (int y = origin.getY(); y <= maxPos.getY(); y++) {
                     for (int z = origin.getZ(); z <= maxPos.getZ(); z++) {
@@ -75,8 +94,92 @@ public class ClipboardManager {
         return !clipboardBlocks.isEmpty();
     }
 
+    /**
+     * Gets the clipboard blocks with current rotation applied.
+     */
     public Map<BlockPos, BlockState> getClipboardBlocks() {
+        if (previewRotation == 0) {
+            return clipboardBlocks;
+        }
+        return getRotatedClipboardBlocks();
+    }
+
+    /**
+     * Gets the raw (unrotated) clipboard blocks.
+     */
+    public Map<BlockPos, BlockState> getRawClipboardBlocks() {
         return clipboardBlocks;
+    }
+
+    /**
+     * Gets the cached rotated clipboard blocks, computing if necessary.
+     */
+    private Map<BlockPos, BlockState> getRotatedClipboardBlocks() {
+        if (rotatedClipboardBlocks == null || cachedRotation != previewRotation) {
+            rotatedClipboardBlocks = computeRotatedBlocks(clipboardBlocks, previewRotation);
+            cachedRotation = previewRotation;
+        }
+        return rotatedClipboardBlocks;
+    }
+
+    /**
+     * Computes rotated block positions and states.
+     * Rotation is clockwise around Y axis when viewed from above.
+     */
+    private Map<BlockPos, BlockState> computeRotatedBlocks(Map<BlockPos, BlockState> blocks, int rotation) {
+        if (rotation == 0) {
+            return new HashMap<>(blocks);
+        }
+
+        Map<BlockPos, BlockState> rotated = new HashMap<>();
+        BlockRotation blockRotation = getBlockRotation(rotation);
+
+        for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
+            BlockPos pos = entry.getKey();
+            BlockState state = entry.getValue();
+
+            // Rotate position around origin
+            BlockPos rotatedPos = rotatePosition(pos, rotation);
+
+            // Rotate block state (handles directional blocks like stairs, logs, etc.)
+            BlockState rotatedState = state.rotate(blockRotation);
+
+            rotated.put(rotatedPos, rotatedState);
+        }
+
+        return rotated;
+    }
+
+    /**
+     * Rotates a position around the Y axis.
+     * The rotation pivot is at the corner (0, y, 0).
+     */
+    private BlockPos rotatePosition(BlockPos pos, int rotation) {
+        int x = pos.getX();
+        int y = pos.getY();
+        int z = pos.getZ();
+
+        return switch (rotation) {
+            case 1 -> // 90° CW: (x, z) -> (sizeZ - z, x)
+                new BlockPos(clipboardSizeZ - z, y, x);
+            case 2 -> // 180°: (x, z) -> (sizeX - x, sizeZ - z)
+                new BlockPos(clipboardSizeX - x, y, clipboardSizeZ - z);
+            case 3 -> // 270° CW (90° CCW): (x, z) -> (z, sizeX - x)
+                new BlockPos(z, y, clipboardSizeX - x);
+            default -> pos;
+        };
+    }
+
+    /**
+     * Converts rotation index to BlockRotation enum.
+     */
+    private BlockRotation getBlockRotation(int rotation) {
+        return switch (rotation) {
+            case 1 -> BlockRotation.CLOCKWISE_90;
+            case 2 -> BlockRotation.CLOCKWISE_180;
+            case 3 -> BlockRotation.COUNTERCLOCKWISE_90;
+            default -> BlockRotation.NONE;
+        };
     }
 
     public boolean isPastePreviewActive() {
@@ -99,18 +202,54 @@ public class ClipboardManager {
     }
 
     /**
+     * Gets the current rotation (0-3, representing 0°, 90°, 180°, 270° CW).
+     */
+    public int getPreviewRotation() {
+        return previewRotation;
+    }
+
+    /**
+     * Sets the rotation and invalidates caches.
+     */
+    public void setPreviewRotation(int rotation) {
+        this.previewRotation = rotation & 3; // Keep in range 0-3
+    }
+
+    /**
+     * Rotates the preview clockwise by 90 degrees.
+     */
+    public void rotateClockwise() {
+        previewRotation = (previewRotation + 1) & 3;
+    }
+
+    /**
+     * Rotates the preview counter-clockwise by 90 degrees.
+     */
+    public void rotateCounterClockwise() {
+        previewRotation = (previewRotation + 3) & 3; // +3 is same as -1 mod 4
+    }
+
+    /**
+     * Resets rotation to 0 degrees.
+     */
+    public void resetRotation() {
+        previewRotation = 0;
+    }
+
+    /**
      * Locks the current preview position as a permanent ghost block placement.
+     * Uses the current rotation.
      */
     public void lockCurrentPlacement() {
         if (previewAnchorPos == null || clipboardBlocks.isEmpty()) {
             return;
         }
 
-        // Create a copy of the clipboard data for this locked placement
-        Map<BlockPos, BlockState> placementBlocks = new HashMap<>(clipboardBlocks);
+        // Create a copy of the clipboard data with current rotation applied
+        Map<BlockPos, BlockState> placementBlocks = new HashMap<>(getClipboardBlocks());
         lockedPlacements.add(new LockedPlacement(previewAnchorPos, placementBlocks));
 
-        // Exit preview mode
+        // Exit preview mode but keep rotation for next paste
         pastePreviewActive = false;
         previewAnchorPos = null;
     }

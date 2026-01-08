@@ -28,6 +28,11 @@ public class MeasurementToolsClient implements ClientModInitializer {
     private boolean radialMenuOpened = false;
     private static final long HOLD_THRESHOLD_MS = 200;
 
+    // Track rotation key states to detect press (not hold)
+    private boolean leftArrowWasPressed = false;
+    private boolean rightArrowWasPressed = false;
+    private int lastPreviewRotation = 0;
+
     @Override
     public void onInitializeClient() {
         // Initialize radial menu actions
@@ -55,6 +60,9 @@ public class MeasurementToolsClient implements ClientModInitializer {
     private void handleInput(MinecraftClient client) {
         // Update paste preview position every tick if active
         updatePastePreview(client);
+
+        // Handle rotation keys when paste preview is active
+        handleRotationInput(client);
 
         // Handle measure key (tap to add block OR confirm paste, hold to open radial menu)
         if (keyBindingMeasure.isPressed()) {
@@ -98,6 +106,54 @@ public class MeasurementToolsClient implements ClientModInitializer {
             BlockHitResult blockHit = (BlockHitResult) hitResult;
             // Set anchor to the block adjacent to the hit face (where player would place a block)
             clipboard.setPreviewAnchorPos(blockHit.getBlockPos().offset(blockHit.getSide()));
+        }
+    }
+
+    private void handleRotationInput(MinecraftClient client) {
+        ClipboardManager clipboard = ClipboardManager.getInstance();
+
+        // Only handle rotation when paste preview is active and no screen is open
+        if (!clipboard.isPastePreviewActive() || client.currentScreen != null) {
+            leftArrowWasPressed = false;
+            rightArrowWasPressed = false;
+            return;
+        }
+
+        // Check left arrow (rotate counter-clockwise)
+        boolean leftPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT);
+        if (leftPressed && !leftArrowWasPressed) {
+            clipboard.rotateCounterClockwise();
+            showRotationMessage(client, clipboard.getPreviewRotation());
+        }
+        leftArrowWasPressed = leftPressed;
+
+        // Check right arrow (rotate clockwise)
+        boolean rightPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT);
+        if (rightPressed && !rightArrowWasPressed) {
+            clipboard.rotateClockwise();
+            showRotationMessage(client, clipboard.getPreviewRotation());
+        }
+        rightArrowWasPressed = rightPressed;
+
+        // Check if rotation changed and invalidate render cache
+        int currentRotation = clipboard.getPreviewRotation();
+        if (currentRotation != lastPreviewRotation) {
+            lastPreviewRotation = currentRotation;
+            // Invalidate the ghost block render cache
+            measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateGhostBlockCaches();
+        }
+    }
+
+    private void showRotationMessage(MinecraftClient client, int rotation) {
+        if (client.player != null) {
+            String degrees = switch (rotation) {
+                case 0 -> "0°";
+                case 1 -> "90°";
+                case 2 -> "180°";
+                case 3 -> "270°";
+                default -> rotation * 90 + "°";
+            };
+            client.player.sendMessage(Text.literal("Rotation: " + degrees), true);
         }
     }
 

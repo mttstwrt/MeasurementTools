@@ -66,4 +66,12 @@ public class MeasurementRenderer {
         // Render ghost blocks (paste preview and locked placements) - always render
         ghostBlockRenderer.render(camera, viewMatrix);
     }
+
+    /**
+     * Invalidates ghost block render caches.
+     * Call when rotation or other settings change that affect the preview.
+     */
+    public void invalidateGhostBlockCaches() {
+        ghostBlockRenderer.invalidateCaches();
+    }
 }
