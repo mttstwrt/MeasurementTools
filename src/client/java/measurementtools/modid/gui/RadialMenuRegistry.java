@@ -115,10 +115,18 @@ public class RadialMenuRegistry {
             }
         });
 
-        // Rectangle Mode
+        // Rectangle Mode (with subdivision scroll support)
         register(new RadialMenuAction() {
             @Override
             public Text getName() {
+                SelectionManager manager = SelectionManager.getInstance();
+                if (manager.getShapeMode() == ShapeMode.RECTANGLE) {
+                    int count = manager.getSubdivisionCount();
+                    if (count == 0) {
+                        return Text.literal("Rectangle");
+                    }
+                    return Text.literal("Rectangle ÷" + count);
+                }
                 return Text.literal("Rectangle");
             }
 
@@ -134,8 +142,21 @@ public class RadialMenuRegistry {
 
             @Override
             public int getColor() {
-                return SelectionManager.getInstance().getShapeMode() == ShapeMode.RECTANGLE
-                    ? 0x66FF66 : 0xFFFFFF;
+                SelectionManager manager = SelectionManager.getInstance();
+                if (manager.getShapeMode() == ShapeMode.RECTANGLE) {
+                    return manager.getSubdivisionCount() > 0 ? 0xFFFF66 : 0x66FF66;
+                }
+                return 0xFFFFFF;
+            }
+
+            @Override
+            public boolean onScroll(double amount) {
+                if (amount > 0) {
+                    SelectionManager.getInstance().stepSubdivisionUp();
+                } else if (amount < 0) {
+                    SelectionManager.getInstance().stepSubdivisionDown();
+                }
+                return true;
             }
         });
 
@@ -208,44 +229,6 @@ public class RadialMenuRegistry {
             public int getColor() {
                 return SelectionManager.getInstance().getShapeMode() == ShapeMode.SPLINE
                     ? 0x66FF66 : 0xFFFFFF;
-            }
-        });
-
-        // Subdivision Toggle
-        register(new RadialMenuAction() {
-            @Override
-            public Text getName() {
-                int count = SelectionManager.getInstance().getSubdivisionCount();
-                if (count == 0) {
-                    return Text.literal("Subdivide: Off");
-                }
-                return Text.literal("Subdivide: " + count);
-            }
-
-            @Override
-            public void execute() {
-                SelectionManager.getInstance().cycleSubdivision();
-            }
-
-            @Override
-            public boolean isEnabled() {
-                return true;
-            }
-
-            @Override
-            public int getColor() {
-                return SelectionManager.getInstance().getSubdivisionCount() > 0
-                    ? 0xFFFF66 : 0xFFFFFF;
-            }
-
-            @Override
-            public boolean onScroll(double amount) {
-                if (amount > 0) {
-                    SelectionManager.getInstance().stepSubdivisionUp();
-                } else if (amount < 0) {
-                    SelectionManager.getInstance().stepSubdivisionDown();
-                }
-                return true;
             }
         });
 
