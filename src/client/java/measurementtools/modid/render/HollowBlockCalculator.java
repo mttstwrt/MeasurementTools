@@ -202,12 +202,15 @@ public class HollowBlockCalculator {
     /**
      * Calculates all blocks that a spline curve passes through.
      * Uses Catmull-Rom interpolation and samples many points along the curve.
+     * If spline radius > 0, calculates blocks forming a tube around the spline.
      */
     private static Set<BlockPos> calculateSplineHollow(SelectionManager manager, int filterLayer) {
         Set<BlockPos> blocks = new HashSet<>();
 
         java.util.List<BlockPos> selection = manager.getSelectedBlocks();
         if (selection.size() < 2) return blocks;
+
+        int tubeRadius = manager.getSplineRadius();
 
         // Convert to double arrays for easier math
         double[][] points = new double[selection.size()][3];
@@ -222,29 +225,184 @@ public class HollowBlockCalculator {
         int n = points.length;
         int samplesPerSegment = 32; // Higher = more accurate block detection
 
-        for (int i = 0; i < n - 1; i++) {
-            // Get the 4 control points for this segment
-            double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
-            double[] p1 = points[i];
-            double[] p2 = points[i + 1];
-            double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+        if (tubeRadius == 0) {
+            // No radius - just collect blocks along the center line
+            for (int i = 0; i < n - 1; i++) {
+                double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
+                double[] p1 = points[i];
+                double[] p2 = points[i + 1];
+                double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
 
-            // Sample along this segment
-            for (int seg = 0; seg <= samplesPerSegment; seg++) {
-                double t = (double) seg / samplesPerSegment;
-                double[] point = catmullRom(p0, p1, p2, p3, t);
+                for (int seg = 0; seg <= samplesPerSegment; seg++) {
+                    double t = (double) seg / samplesPerSegment;
+                    double[] point = catmullRom(p0, p1, p2, p3, t);
 
-                int blockX = (int) Math.floor(point[0]);
-                int blockY = (int) Math.floor(point[1]);
-                int blockZ = (int) Math.floor(point[2]);
+                    int blockX = (int) Math.floor(point[0]);
+                    int blockY = (int) Math.floor(point[1]);
+                    int blockZ = (int) Math.floor(point[2]);
 
-                if (filterLayer == -1 || blockY == filterLayer) {
-                    blocks.add(new BlockPos(blockX, blockY, blockZ));
+                    if (filterLayer == -1 || blockY == filterLayer) {
+                        blocks.add(new BlockPos(blockX, blockY, blockZ));
+                    }
+                }
+            }
+        } else {
+            // With radius - collect all blocks inside the tube, then filter to surface
+            Set<BlockPos> allTubeBlocks = new HashSet<>();
+
+            for (int i = 0; i < n - 1; i++) {
+                double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
+                double[] p1 = points[i];
+                double[] p2 = points[i + 1];
+                double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+
+                for (int seg = 0; seg <= samplesPerSegment; seg++) {
+                    double t = (double) seg / samplesPerSegment;
+                    double[] center = catmullRom(p0, p1, p2, p3, t);
+                    double[] tangent = catmullRomDerivative(p0, p1, p2, p3, t);
+                    normalize(tangent);
+
+                    // Find perpendicular vectors
+                    double[] perp1 = findPerpendicular(tangent);
+                    double[] perp2 = crossProduct(tangent, perp1);
+                    normalize(perp2);
+
+                    // Sample blocks in a disk perpendicular to the spline
+                    for (int dx = -tubeRadius; dx <= tubeRadius; dx++) {
+                        for (int dy = -tubeRadius; dy <= tubeRadius; dy++) {
+                            for (int dz = -tubeRadius; dz <= tubeRadius; dz++) {
+                                // Check if block center is within tube radius
+                                int blockX = (int) Math.floor(center[0]) + dx;
+                                int blockY = (int) Math.floor(center[1]) + dy;
+                                int blockZ = (int) Math.floor(center[2]) + dz;
+
+                                double bcx = blockX + 0.5;
+                                double bcy = blockY + 0.5;
+                                double bcz = blockZ + 0.5;
+
+                                // Project block center onto the plane perpendicular to tangent at this point
+                                double vx = bcx - center[0];
+                                double vy = bcy - center[1];
+                                double vz = bcz - center[2];
+
+                                // Distance along tangent (we only care about perpendicular distance)
+                                double alongTangent = vx * tangent[0] + vy * tangent[1] + vz * tangent[2];
+
+                                // Perpendicular component
+                                double px = vx - alongTangent * tangent[0];
+                                double py = vy - alongTangent * tangent[1];
+                                double pz = vz - alongTangent * tangent[2];
+                                double perpDist = Math.sqrt(px * px + py * py + pz * pz);
+
+                                // Include blocks within radius
+                                if (perpDist <= tubeRadius + 0.5) {
+                                    allTubeBlocks.add(new BlockPos(blockX, blockY, blockZ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Filter to surface blocks only (hollow mode)
+            for (BlockPos pos : allTubeBlocks) {
+                if (filterLayer != -1 && pos.getY() != filterLayer) continue;
+
+                // Check if this block is on the surface by checking distance from spline
+                double minDist = getMinDistanceToSpline(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, points);
+
+                // Block is on surface if it's near the outer edge of the tube
+                if (minDist >= tubeRadius - 0.5) {
+                    blocks.add(pos);
                 }
             }
         }
 
         return blocks;
+    }
+
+    /**
+     * Gets the minimum distance from a point to the spline curve.
+     */
+    private static double getMinDistanceToSpline(double px, double py, double pz, double[][] points) {
+        double minDist = Double.MAX_VALUE;
+        int n = points.length;
+        int samplesPerSegment = 16;
+
+        for (int i = 0; i < n - 1; i++) {
+            double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
+            double[] p1 = points[i];
+            double[] p2 = points[i + 1];
+            double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+
+            for (int seg = 0; seg <= samplesPerSegment; seg++) {
+                double t = (double) seg / samplesPerSegment;
+                double[] splinePoint = catmullRom(p0, p1, p2, p3, t);
+
+                double dx = px - splinePoint[0];
+                double dy = py - splinePoint[1];
+                double dz = pz - splinePoint[2];
+                double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                if (dist < minDist) {
+                    minDist = dist;
+                }
+            }
+        }
+
+        return minDist;
+    }
+
+    /**
+     * Derivative of Catmull-Rom spline.
+     */
+    private static double[] catmullRomDerivative(double[] p0, double[] p1, double[] p2, double[] p3, double t) {
+        double t2 = t * t;
+        double[] result = new double[3];
+
+        for (int i = 0; i < 3; i++) {
+            result[i] = 0.5 * ((-p0[i] + p2[i]) +
+                              2 * (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t +
+                              3 * (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t2);
+        }
+        return result;
+    }
+
+    /**
+     * Normalizes a 3D vector in place.
+     */
+    private static void normalize(double[] v) {
+        double len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (len > 0.0001) {
+            v[0] /= len;
+            v[1] /= len;
+            v[2] /= len;
+        }
+    }
+
+    /**
+     * Finds a vector perpendicular to the given direction.
+     */
+    private static double[] findPerpendicular(double[] direction) {
+        double[] up = {0, 1, 0};
+        double dot = direction[0] * up[0] + direction[1] * up[1] + direction[2] * up[2];
+        if (Math.abs(dot) > 0.99) {
+            up = new double[]{1, 0, 0};
+        }
+        double[] result = crossProduct(direction, up);
+        normalize(result);
+        return result;
+    }
+
+    /**
+     * Cross product of two 3D vectors.
+     */
+    private static double[] crossProduct(double[] a, double[] b) {
+        return new double[]{
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0]
+        };
     }
 
     /**

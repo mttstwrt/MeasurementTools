@@ -117,6 +117,7 @@ public class HollowShapeRenderer {
         hash = 31 * hash + max.hashCode();
         hash = 31 * hash + manager.getSelectedBlocks().size();
         hash = 31 * hash + (manager.getEllipsoidMode() != null ? manager.getEllipsoidMode().hashCode() : 0);
+        hash = 31 * hash + manager.getSplineRadius();
         return hash;
     }
 

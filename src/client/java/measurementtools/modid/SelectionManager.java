@@ -15,6 +15,7 @@ public class SelectionManager {
     private ShapeMode currentShapeMode = ShapeMode.RECTANGLE;
     private EllipsoidMode ellipsoidMode = EllipsoidMode.FIT_TO_BOX;
     private int subdivisionCount = 0;
+    private int splineRadius = 0;
     private boolean blockCountingEnabled = false;
     private boolean hollowMode = false;
 
@@ -112,6 +113,29 @@ public class SelectionManager {
             }
         }
         return 0;
+    }
+
+    // Spline radius options (0 = line only, 1+ = tube radius in blocks)
+    private static final int MAX_SPLINE_RADIUS = 16;
+
+    public int getSplineRadius() {
+        return splineRadius;
+    }
+
+    public void setSplineRadius(int radius) {
+        this.splineRadius = Math.max(0, Math.min(MAX_SPLINE_RADIUS, radius));
+    }
+
+    public void stepSplineRadiusUp() {
+        if (splineRadius < MAX_SPLINE_RADIUS) {
+            splineRadius++;
+        }
+    }
+
+    public void stepSplineRadiusDown() {
+        if (splineRadius > 0) {
+            splineRadius--;
+        }
     }
 
     public BlockPos getCenterBlock() {

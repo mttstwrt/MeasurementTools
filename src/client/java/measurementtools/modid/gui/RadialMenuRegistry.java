@@ -208,10 +208,18 @@ public class RadialMenuRegistry {
             }
         });
 
-        // Spline Mode
+        // Spline Mode (with radius scroll support for tubes/tunnels)
         register(new RadialMenuAction() {
             @Override
             public Text getName() {
+                SelectionManager manager = SelectionManager.getInstance();
+                if (manager.getShapeMode() == ShapeMode.SPLINE) {
+                    int radius = manager.getSplineRadius();
+                    if (radius == 0) {
+                        return Text.literal("Spline");
+                    }
+                    return Text.literal("Spline r=" + radius);
+                }
                 return Text.literal("Spline");
             }
 
@@ -227,8 +235,21 @@ public class RadialMenuRegistry {
 
             @Override
             public int getColor() {
-                return SelectionManager.getInstance().getShapeMode() == ShapeMode.SPLINE
-                    ? 0x66FF66 : 0xFFFFFF;
+                SelectionManager manager = SelectionManager.getInstance();
+                if (manager.getShapeMode() == ShapeMode.SPLINE) {
+                    return manager.getSplineRadius() > 0 ? 0xFFFF66 : 0x66FF66;
+                }
+                return 0xFFFFFF;
+            }
+
+            @Override
+            public boolean onScroll(double amount) {
+                if (amount > 0) {
+                    SelectionManager.getInstance().stepSplineRadiusUp();
+                } else if (amount < 0) {
+                    SelectionManager.getInstance().stepSplineRadiusDown();
+                }
+                return true;
             }
         });
 
