@@ -28,7 +28,7 @@ public class HollowBlockCalculator {
             case RECTANGLE -> calculateRectangleHollow(manager, filterLayer);
             case CYLINDER -> calculateCylinderHollow(manager, filterLayer);
             case ELLIPSOID -> calculateEllipsoidHollow(manager, filterLayer);
-            case SPLINE -> Set.of(); // Spline is a curve, hollow mode not applicable
+            case SPLINE -> calculateSplineHollow(manager, filterLayer);
         };
     }
 
@@ -197,5 +197,92 @@ public class HollowBlockCalculator {
         }
 
         return blocks;
+    }
+
+    /**
+     * Calculates all blocks that a spline curve passes through.
+     * Uses Catmull-Rom interpolation and samples many points along the curve.
+     */
+    private static Set<BlockPos> calculateSplineHollow(SelectionManager manager, int filterLayer) {
+        Set<BlockPos> blocks = new HashSet<>();
+
+        java.util.List<BlockPos> selection = manager.getSelectedBlocks();
+        if (selection.size() < 2) return blocks;
+
+        // Convert to double arrays for easier math
+        double[][] points = new double[selection.size()][3];
+        for (int i = 0; i < selection.size(); i++) {
+            BlockPos pos = selection.get(i);
+            points[i][0] = pos.getX() + 0.5;
+            points[i][1] = pos.getY() + 0.5;
+            points[i][2] = pos.getZ() + 0.5;
+        }
+
+        // Sample points along the spline and collect block positions
+        int n = points.length;
+        int samplesPerSegment = 32; // Higher = more accurate block detection
+
+        for (int i = 0; i < n - 1; i++) {
+            // Get the 4 control points for this segment
+            double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
+            double[] p1 = points[i];
+            double[] p2 = points[i + 1];
+            double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+
+            // Sample along this segment
+            for (int seg = 0; seg <= samplesPerSegment; seg++) {
+                double t = (double) seg / samplesPerSegment;
+                double[] point = catmullRom(p0, p1, p2, p3, t);
+
+                int blockX = (int) Math.floor(point[0]);
+                int blockY = (int) Math.floor(point[1]);
+                int blockZ = (int) Math.floor(point[2]);
+
+                if (filterLayer == -1 || blockY == filterLayer) {
+                    blocks.add(new BlockPos(blockX, blockY, blockZ));
+                }
+            }
+        }
+
+        return blocks;
+    }
+
+    /**
+     * Catmull-Rom spline interpolation.
+     */
+    private static double[] catmullRom(double[] p0, double[] p1, double[] p2, double[] p3, double t) {
+        double t2 = t * t;
+        double t3 = t2 * t;
+
+        double[] result = new double[3];
+        for (int i = 0; i < 3; i++) {
+            result[i] = 0.5 * ((2 * p1[i]) +
+                              (-p0[i] + p2[i]) * t +
+                              (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t2 +
+                              (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t3);
+        }
+        return result;
+    }
+
+    /**
+     * Extrapolates a phantom point before the start of the curve.
+     */
+    private static double[] extrapolateStart(double[] p0, double[] p1) {
+        return new double[] {
+            2 * p0[0] - p1[0],
+            2 * p0[1] - p1[1],
+            2 * p0[2] - p1[2]
+        };
+    }
+
+    /**
+     * Extrapolates a phantom point after the end of the curve.
+     */
+    private static double[] extrapolateEnd(double[] pn1, double[] pn) {
+        return new double[] {
+            2 * pn[0] - pn1[0],
+            2 * pn[1] - pn1[1],
+            2 * pn[2] - pn1[2]
+        };
     }
 }
