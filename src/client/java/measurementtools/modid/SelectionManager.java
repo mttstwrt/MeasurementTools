@@ -84,16 +84,34 @@ public class SelectionManager {
         return subdivisionCount;
     }
 
+    private static final int[] SUBDIVISION_OPTIONS = {0, 2, 3, 4, 5, 8, 10, 16};
+
     public void cycleSubdivision() {
-        int[] options = {0, 2, 3, 4, 5, 8, 10, 16};
-        int currentIndex = 0;
-        for (int i = 0; i < options.length; i++) {
-            if (options[i] == subdivisionCount) {
-                currentIndex = i;
-                break;
+        int currentIndex = getSubdivisionIndex();
+        subdivisionCount = SUBDIVISION_OPTIONS[(currentIndex + 1) % SUBDIVISION_OPTIONS.length];
+    }
+
+    public void stepSubdivisionUp() {
+        int currentIndex = getSubdivisionIndex();
+        if (currentIndex < SUBDIVISION_OPTIONS.length - 1) {
+            subdivisionCount = SUBDIVISION_OPTIONS[currentIndex + 1];
+        }
+    }
+
+    public void stepSubdivisionDown() {
+        int currentIndex = getSubdivisionIndex();
+        if (currentIndex > 0) {
+            subdivisionCount = SUBDIVISION_OPTIONS[currentIndex - 1];
+        }
+    }
+
+    private int getSubdivisionIndex() {
+        for (int i = 0; i < SUBDIVISION_OPTIONS.length; i++) {
+            if (SUBDIVISION_OPTIONS[i] == subdivisionCount) {
+                return i;
             }
         }
-        subdivisionCount = options[(currentIndex + 1) % options.length];
+        return 0;
     }
 
     public BlockPos getCenterBlock() {

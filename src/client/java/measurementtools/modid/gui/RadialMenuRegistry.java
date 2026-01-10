@@ -237,6 +237,16 @@ public class RadialMenuRegistry {
                 return SelectionManager.getInstance().getSubdivisionCount() > 0
                     ? 0xFFFF66 : 0xFFFFFF;
             }
+
+            @Override
+            public boolean onScroll(double amount) {
+                if (amount > 0) {
+                    SelectionManager.getInstance().stepSubdivisionUp();
+                } else if (amount < 0) {
+                    SelectionManager.getInstance().stepSubdivisionDown();
+                }
+                return true;
+            }
         });
 
         // Block Count Toggle
