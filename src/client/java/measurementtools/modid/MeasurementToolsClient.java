@@ -115,13 +115,7 @@ public class MeasurementToolsClient implements ClientModInitializer {
         ClipboardManager clipboard = ClipboardManager.getInstance();
         SelectionManager selection = SelectionManager.getInstance();
 
-        // Handle layer mode for hollow shapes (when not in paste preview)
-        if (selection.isLayerModeEnabled() && selection.hasSelection() && !clipboard.isPastePreviewActive()) {
-            handleHollowLayerInput(client, selection);
-        }
-
-        // Handle paste preview controls
-        if (!clipboard.isPastePreviewActive() || client.currentScreen != null) {
+        if (client.currentScreen != null) {
             leftArrowWasPressed = false;
             rightArrowWasPressed = false;
             upArrowWasPressed = false;
@@ -129,80 +123,94 @@ public class MeasurementToolsClient implements ClientModInitializer {
             return;
         }
 
-        // Check left arrow (rotate counter-clockwise)
-        boolean leftPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT);
-        if (leftPressed && !leftArrowWasPressed) {
-            clipboard.rotateCounterClockwise();
-            showRotationMessage(client, clipboard.getPreviewRotation());
-        }
-        leftArrowWasPressed = leftPressed;
+        // Handle layer mode for both hollow shapes and locked placements (when not in paste preview)
+        if (!clipboard.isPastePreviewActive()) {
+            boolean hollowLayerActive = selection.isLayerModeEnabled() && selection.hasSelection();
+            boolean pasteLayerActive = clipboard.isLayerViewEnabled() && clipboard.hasLockedPlacements();
 
-        // Check right arrow (rotate clockwise)
-        boolean rightPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT);
-        if (rightPressed && !rightArrowWasPressed) {
-            clipboard.rotateClockwise();
-            showRotationMessage(client, clipboard.getPreviewRotation());
+            if (hollowLayerActive || pasteLayerActive) {
+                handleLayerInput(client, selection, clipboard, hollowLayerActive, pasteLayerActive);
+            } else {
+                upArrowWasPressed = false;
+                downArrowWasPressed = false;
+            }
         }
-        rightArrowWasPressed = rightPressed;
 
-        // Handle up/down arrows for layer view in paste preview
-        if (clipboard.isLayerViewEnabled()) {
-            boolean upPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_UP);
-            if (upPressed && !upArrowWasPressed) {
-                clipboard.cycleLayerUp();
-                showPasteLayerMessage(client, clipboard);
+        // Handle paste preview rotation controls
+        if (clipboard.isPastePreviewActive()) {
+            // Check left arrow (rotate counter-clockwise)
+            boolean leftPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT);
+            if (leftPressed && !leftArrowWasPressed) {
+                clipboard.rotateCounterClockwise();
+                showRotationMessage(client, clipboard.getPreviewRotation());
+            }
+            leftArrowWasPressed = leftPressed;
+
+            // Check right arrow (rotate clockwise)
+            boolean rightPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT);
+            if (rightPressed && !rightArrowWasPressed) {
+                clipboard.rotateClockwise();
+                showRotationMessage(client, clipboard.getPreviewRotation());
+            }
+            rightArrowWasPressed = rightPressed;
+
+            // Check if rotation changed and invalidate render cache
+            int currentRotation = clipboard.getPreviewRotation();
+            if (currentRotation != lastPreviewRotation) {
+                lastPreviewRotation = currentRotation;
                 measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateGhostBlockCaches();
             }
-            upArrowWasPressed = upPressed;
-
-            boolean downPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_DOWN);
-            if (downPressed && !downArrowWasPressed) {
-                clipboard.cycleLayerDown();
-                showPasteLayerMessage(client, clipboard);
-                measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateGhostBlockCaches();
-            }
-            downArrowWasPressed = downPressed;
-        }
-
-        // Check if rotation changed and invalidate render cache
-        int currentRotation = clipboard.getPreviewRotation();
-        if (currentRotation != lastPreviewRotation) {
-            lastPreviewRotation = currentRotation;
-            // Invalidate the ghost block render cache
-            measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateGhostBlockCaches();
+        } else {
+            leftArrowWasPressed = false;
+            rightArrowWasPressed = false;
         }
     }
 
-    private void handleHollowLayerInput(MinecraftClient client, SelectionManager selection) {
-        if (client.currentScreen != null) return;
-
+    private void handleLayerInput(MinecraftClient client, SelectionManager selection,
+                                   ClipboardManager clipboard, boolean hollowActive, boolean pasteActive) {
         boolean upPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_UP);
         if (upPressed && !upArrowWasPressed) {
-            selection.cycleLayerUp();
-            showHollowLayerMessage(client, selection);
-            measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateHollowShapeCache();
+            if (hollowActive) {
+                selection.cycleLayerUp();
+                measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateHollowShapeCache();
+            }
+            if (pasteActive) {
+                clipboard.cycleLayerUp();
+            }
+            showLayerMessage(client, selection, clipboard, hollowActive, pasteActive);
         }
         upArrowWasPressed = upPressed;
 
         boolean downPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_DOWN);
         if (downPressed && !downArrowWasPressed) {
-            selection.cycleLayerDown();
-            showHollowLayerMessage(client, selection);
-            measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateHollowShapeCache();
+            if (hollowActive) {
+                selection.cycleLayerDown();
+                measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateHollowShapeCache();
+            }
+            if (pasteActive) {
+                clipboard.cycleLayerDown();
+            }
+            showLayerMessage(client, selection, clipboard, hollowActive, pasteActive);
         }
         downArrowWasPressed = downPressed;
     }
 
-    private void showHollowLayerMessage(MinecraftClient client, SelectionManager selection) {
-        if (client.player != null) {
+    private void showLayerMessage(MinecraftClient client, SelectionManager selection,
+                                   ClipboardManager clipboard, boolean hollowActive, boolean pasteActive) {
+        if (client.player == null) return;
+
+        if (hollowActive && pasteActive) {
+            // Show both
+            int hLayer = selection.getCurrentLayer() + 1;
+            int hTotal = selection.getLayerCount();
+            int pLayer = clipboard.getCurrentViewLayer() + 1;
+            int pTotal = clipboard.getLayerCount();
+            client.player.sendMessage(Text.literal("Layer: " + hLayer + "/" + hTotal + " | Paste: " + pLayer + "/" + pTotal), true);
+        } else if (hollowActive) {
             int layer = selection.getCurrentLayer() + 1;
             int total = selection.getLayerCount();
             client.player.sendMessage(Text.literal("Layer: " + layer + "/" + total + " (Y=" + selection.getCurrentLayerY() + ")"), true);
-        }
-    }
-
-    private void showPasteLayerMessage(MinecraftClient client, ClipboardManager clipboard) {
-        if (client.player != null) {
+        } else if (pasteActive) {
             int layer = clipboard.getCurrentViewLayer() + 1;
             int total = clipboard.getLayerCount();
             client.player.sendMessage(Text.literal("Layer: " + layer + "/" + total), true);

@@ -35,7 +35,7 @@ public class ClipboardManager {
     // Locked placements: each entry is (anchorPos, relativeBlocks with states)
     private final List<LockedPlacement> lockedPlacements = new ArrayList<>();
 
-    // Layer view for paste preview
+    // Layer view for locked placements (after pasting)
     private boolean layerViewEnabled = false;
     private int currentViewLayer = 0; // Relative Y level being viewed
 
@@ -240,7 +240,7 @@ public class ClipboardManager {
         previewRotation = 0;
     }
 
-    // ========== Layer View Methods ==========
+    // ========== Layer View Methods (for locked placements) ==========
 
     public boolean isLayerViewEnabled() {
         return layerViewEnabled;
@@ -248,9 +248,9 @@ public class ClipboardManager {
 
     public void setLayerViewEnabled(boolean enabled) {
         this.layerViewEnabled = enabled;
-        if (enabled && !clipboardBlocks.isEmpty()) {
+        if (enabled && !lockedPlacements.isEmpty()) {
             // Reset to middle layer when enabling
-            int maxY = getClipboardMaxY();
+            int maxY = getLockedPlacementsMaxY();
             currentViewLayer = maxY / 2;
         }
     }
@@ -268,8 +268,8 @@ public class ClipboardManager {
     }
 
     public void cycleLayerUp() {
-        if (clipboardBlocks.isEmpty()) return;
-        int maxY = getClipboardMaxY();
+        if (lockedPlacements.isEmpty()) return;
+        int maxY = getLockedPlacementsMaxY();
         if (currentViewLayer < maxY) {
             currentViewLayer++;
         }
@@ -282,23 +282,33 @@ public class ClipboardManager {
     }
 
     /**
-     * Gets the maximum Y value in the clipboard (relative coordinates).
+     * Gets the maximum Y value across all locked placements (relative coordinates).
      */
-    private int getClipboardMaxY() {
+    private int getLockedPlacementsMaxY() {
         int maxY = 0;
-        for (BlockPos pos : clipboardBlocks.keySet()) {
-            if (pos.getY() > maxY) {
-                maxY = pos.getY();
+        for (LockedPlacement placement : lockedPlacements) {
+            for (BlockPos pos : placement.getBlocks().keySet()) {
+                if (pos.getY() > maxY) {
+                    maxY = pos.getY();
+                }
             }
         }
         return maxY;
     }
 
     /**
-     * Gets the total number of layers in the clipboard.
+     * Gets the total number of layers in the locked placements.
      */
     public int getLayerCount() {
-        return getClipboardMaxY() + 1;
+        if (lockedPlacements.isEmpty()) return 0;
+        return getLockedPlacementsMaxY() + 1;
+    }
+
+    /**
+     * Returns true if there are locked placements to view layers of.
+     */
+    public boolean hasLockedPlacements() {
+        return !lockedPlacements.isEmpty();
     }
 
     /**
@@ -329,6 +339,9 @@ public class ClipboardManager {
             placement.clear();
         }
         lockedPlacements.clear();
+        // Reset layer view since there's nothing to view
+        layerViewEnabled = false;
+        currentViewLayer = 0;
     }
 
     public void clearClipboard() {

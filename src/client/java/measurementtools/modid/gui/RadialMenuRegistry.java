@@ -265,21 +265,14 @@ public class RadialMenuRegistry {
             }
         });
 
-        // Layer Mode Toggle (for hollow shapes)
+        // Layer Mode Toggle (affects both hollow shapes and locked placements)
         register(new RadialMenuAction() {
             @Override
             public Text getName() {
                 SelectionManager selection = SelectionManager.getInstance();
                 ClipboardManager clipboard = ClipboardManager.getInstance();
-
-                // Show different label based on context
-                if (clipboard.isPastePreviewActive()) {
-                    boolean enabled = clipboard.isLayerViewEnabled();
-                    return Text.literal(enabled ? "Paste Layer: On" : "Paste Layer: Off");
-                } else {
-                    boolean enabled = selection.isLayerModeEnabled();
-                    return Text.literal(enabled ? "Layer: On" : "Layer: Off");
-                }
+                boolean enabled = selection.isLayerModeEnabled() || clipboard.isLayerViewEnabled();
+                return Text.literal(enabled ? "Layer: On" : "Layer: Off");
             }
 
             @Override
@@ -287,33 +280,31 @@ public class RadialMenuRegistry {
                 SelectionManager selection = SelectionManager.getInstance();
                 ClipboardManager clipboard = ClipboardManager.getInstance();
 
-                // Toggle appropriate layer mode based on context
-                if (clipboard.isPastePreviewActive()) {
-                    clipboard.toggleLayerView();
-                } else {
-                    selection.toggleLayerMode();
+                // Determine current state (either being on means it's "on")
+                boolean currentlyEnabled = selection.isLayerModeEnabled() || clipboard.isLayerViewEnabled();
+                boolean newState = !currentlyEnabled;
+
+                // Apply to both if applicable
+                if (selection.hasSelection()) {
+                    selection.setLayerModeEnabled(newState);
+                }
+                if (clipboard.hasLockedPlacements()) {
+                    clipboard.setLayerViewEnabled(newState);
                 }
             }
 
             @Override
             public boolean isEnabled() {
-                SelectionManager selection = SelectionManager.getInstance();
-                ClipboardManager clipboard = ClipboardManager.getInstance();
-                // Enable if we have a selection (for hollow) or paste preview is active
-                return selection.hasSelection() || clipboard.isPastePreviewActive();
+                // Enable if we have a selection (for hollow) or locked placements
+                return SelectionManager.getInstance().hasSelection() ||
+                       ClipboardManager.getInstance().hasLockedPlacements();
             }
 
             @Override
             public int getColor() {
                 SelectionManager selection = SelectionManager.getInstance();
                 ClipboardManager clipboard = ClipboardManager.getInstance();
-
-                boolean active = false;
-                if (clipboard.isPastePreviewActive()) {
-                    active = clipboard.isLayerViewEnabled();
-                } else {
-                    active = selection.isLayerModeEnabled();
-                }
+                boolean active = selection.isLayerModeEnabled() || clipboard.isLayerViewEnabled();
                 return active ? 0x66FF99 : 0xFFFFFF;
             }
         });

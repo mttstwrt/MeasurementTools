@@ -90,12 +90,6 @@ public class GhostBlockRenderer {
             if (anchor != null) {
                 Map<BlockPos, BlockState> visibleBlocks = getPreviewVisibleBlocks(clipboard.getClipboardBlocks());
 
-                // Filter by layer if layer view is enabled
-                if (clipboard.isLayerViewEnabled()) {
-                    int layer = clipboard.getCurrentViewLayer();
-                    visibleBlocks = filterByLayer(visibleBlocks, layer);
-                }
-
                 if (renderMode == ModConfig.GhostBlockRenderMode.SOLID) {
                     renderSolidBlocksCached(viewMatrix, cameraPos, world, anchor, visibleBlocks, true, opacity);
                 } else {
@@ -104,13 +98,23 @@ public class GhostBlockRenderer {
             }
         }
 
-        // Render all locked placements
+        // Render all locked placements (with optional layer filtering)
+        boolean filterByLayer = clipboard.isLayerViewEnabled();
+        int layerToShow = filterByLayer ? clipboard.getCurrentViewLayer() : -1;
+
         for (ClipboardManager.LockedPlacement placement : clipboard.getLockedPlacements()) {
+            Map<BlockPos, BlockState> blocksToRender = placement.getVisibleBlocks();
+
+            // Filter by layer if layer view is enabled
+            if (filterByLayer) {
+                blocksToRender = filterByLayer(blocksToRender, layerToShow);
+            }
+
             if (renderMode == ModConfig.GhostBlockRenderMode.SOLID) {
-                renderLockedPlacementCached(viewMatrix, cameraPos, world, placement, opacity);
+                renderLockedPlacementCachedFiltered(viewMatrix, cameraPos, world, placement, blocksToRender, opacity);
             } else {
                 renderWireframeBlocks(viewMatrix, cameraPos, world,
-                    placement.getAnchorPos(), placement.getVisibleBlocks(), false, opacity);
+                    placement.getAnchorPos(), blocksToRender, false, opacity);
             }
         }
 
@@ -180,6 +184,30 @@ public class GhostBlockRenderer {
         }
 
         lastLockedOpacity = opacity;
+    }
+
+    /**
+     * Renders a locked placement with a filtered set of blocks.
+     * Does not use caching since the filtered blocks may change frequently.
+     */
+    private void renderLockedPlacementCachedFiltered(Matrix4f viewMatrix, Vec3d cameraPos, World world,
+                                                      ClipboardManager.LockedPlacement placement,
+                                                      Map<BlockPos, BlockState> filteredBlocks, float opacity) {
+        if (filteredBlocks.isEmpty()) return;
+
+        BlockPos anchor = placement.getAnchorPos();
+
+        // Check render distance
+        if (!isAnchorVisible(anchor, cameraPos)) {
+            return;
+        }
+
+        // Build vertex data for filtered blocks (no caching when layer view is active)
+        CachedVertexData cache = buildVertexCache(world, filteredBlocks, false, opacity);
+
+        if (cache != null && !cache.isEmpty()) {
+            drawCachedData(viewMatrix, cameraPos, anchor, cache, filteredBlocks.size());
+        }
     }
 
     /**
