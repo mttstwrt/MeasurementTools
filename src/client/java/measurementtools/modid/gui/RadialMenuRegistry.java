@@ -239,5 +239,83 @@ public class RadialMenuRegistry {
                     ? 0x66CCFF : 0xFFFFFF;
             }
         });
+
+        // Hollow Mode Toggle
+        register(new RadialMenuAction() {
+            @Override
+            public Text getName() {
+                boolean enabled = SelectionManager.getInstance().isHollowMode();
+                return Text.literal(enabled ? "Hollow: On" : "Hollow: Off");
+            }
+
+            @Override
+            public void execute() {
+                SelectionManager.getInstance().toggleHollowMode();
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+
+            @Override
+            public int getColor() {
+                return SelectionManager.getInstance().isHollowMode()
+                    ? 0xFF9966 : 0xFFFFFF;
+            }
+        });
+
+        // Layer Mode Toggle (for hollow shapes)
+        register(new RadialMenuAction() {
+            @Override
+            public Text getName() {
+                SelectionManager selection = SelectionManager.getInstance();
+                ClipboardManager clipboard = ClipboardManager.getInstance();
+
+                // Show different label based on context
+                if (clipboard.isPastePreviewActive()) {
+                    boolean enabled = clipboard.isLayerViewEnabled();
+                    return Text.literal(enabled ? "Paste Layer: On" : "Paste Layer: Off");
+                } else {
+                    boolean enabled = selection.isLayerModeEnabled();
+                    return Text.literal(enabled ? "Layer: On" : "Layer: Off");
+                }
+            }
+
+            @Override
+            public void execute() {
+                SelectionManager selection = SelectionManager.getInstance();
+                ClipboardManager clipboard = ClipboardManager.getInstance();
+
+                // Toggle appropriate layer mode based on context
+                if (clipboard.isPastePreviewActive()) {
+                    clipboard.toggleLayerView();
+                } else {
+                    selection.toggleLayerMode();
+                }
+            }
+
+            @Override
+            public boolean isEnabled() {
+                SelectionManager selection = SelectionManager.getInstance();
+                ClipboardManager clipboard = ClipboardManager.getInstance();
+                // Enable if we have a selection (for hollow) or paste preview is active
+                return selection.hasSelection() || clipboard.isPastePreviewActive();
+            }
+
+            @Override
+            public int getColor() {
+                SelectionManager selection = SelectionManager.getInstance();
+                ClipboardManager clipboard = ClipboardManager.getInstance();
+
+                boolean active = false;
+                if (clipboard.isPastePreviewActive()) {
+                    active = clipboard.isLayerViewEnabled();
+                } else {
+                    active = selection.isLayerModeEnabled();
+                }
+                return active ? 0x66FF99 : 0xFFFFFF;
+            }
+        });
     }
 }

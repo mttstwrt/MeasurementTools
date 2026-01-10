@@ -28,9 +28,11 @@ public class MeasurementToolsClient implements ClientModInitializer {
     private boolean radialMenuOpened = false;
     private static final long HOLD_THRESHOLD_MS = 200;
 
-    // Track rotation key states to detect press (not hold)
+    // Track arrow key states to detect press (not hold)
     private boolean leftArrowWasPressed = false;
     private boolean rightArrowWasPressed = false;
+    private boolean upArrowWasPressed = false;
+    private boolean downArrowWasPressed = false;
     private int lastPreviewRotation = 0;
 
     @Override
@@ -111,11 +113,19 @@ public class MeasurementToolsClient implements ClientModInitializer {
 
     private void handleRotationInput(MinecraftClient client) {
         ClipboardManager clipboard = ClipboardManager.getInstance();
+        SelectionManager selection = SelectionManager.getInstance();
 
-        // Only handle rotation when paste preview is active and no screen is open
+        // Handle layer mode for hollow shapes (when not in paste preview)
+        if (selection.isLayerModeEnabled() && selection.hasSelection() && !clipboard.isPastePreviewActive()) {
+            handleHollowLayerInput(client, selection);
+        }
+
+        // Handle paste preview controls
         if (!clipboard.isPastePreviewActive() || client.currentScreen != null) {
             leftArrowWasPressed = false;
             rightArrowWasPressed = false;
+            upArrowWasPressed = false;
+            downArrowWasPressed = false;
             return;
         }
 
@@ -135,12 +145,67 @@ public class MeasurementToolsClient implements ClientModInitializer {
         }
         rightArrowWasPressed = rightPressed;
 
+        // Handle up/down arrows for layer view in paste preview
+        if (clipboard.isLayerViewEnabled()) {
+            boolean upPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_UP);
+            if (upPressed && !upArrowWasPressed) {
+                clipboard.cycleLayerUp();
+                showPasteLayerMessage(client, clipboard);
+                measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateGhostBlockCaches();
+            }
+            upArrowWasPressed = upPressed;
+
+            boolean downPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_DOWN);
+            if (downPressed && !downArrowWasPressed) {
+                clipboard.cycleLayerDown();
+                showPasteLayerMessage(client, clipboard);
+                measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateGhostBlockCaches();
+            }
+            downArrowWasPressed = downPressed;
+        }
+
         // Check if rotation changed and invalidate render cache
         int currentRotation = clipboard.getPreviewRotation();
         if (currentRotation != lastPreviewRotation) {
             lastPreviewRotation = currentRotation;
             // Invalidate the ghost block render cache
             measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateGhostBlockCaches();
+        }
+    }
+
+    private void handleHollowLayerInput(MinecraftClient client, SelectionManager selection) {
+        if (client.currentScreen != null) return;
+
+        boolean upPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_UP);
+        if (upPressed && !upArrowWasPressed) {
+            selection.cycleLayerUp();
+            showHollowLayerMessage(client, selection);
+            measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateHollowShapeCache();
+        }
+        upArrowWasPressed = upPressed;
+
+        boolean downPressed = InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_DOWN);
+        if (downPressed && !downArrowWasPressed) {
+            selection.cycleLayerDown();
+            showHollowLayerMessage(client, selection);
+            measurementtools.modid.render.MeasurementRenderer.getInstance().invalidateHollowShapeCache();
+        }
+        downArrowWasPressed = downPressed;
+    }
+
+    private void showHollowLayerMessage(MinecraftClient client, SelectionManager selection) {
+        if (client.player != null) {
+            int layer = selection.getCurrentLayer() + 1;
+            int total = selection.getLayerCount();
+            client.player.sendMessage(Text.literal("Layer: " + layer + "/" + total + " (Y=" + selection.getCurrentLayerY() + ")"), true);
+        }
+    }
+
+    private void showPasteLayerMessage(MinecraftClient client, ClipboardManager clipboard) {
+        if (client.player != null) {
+            int layer = clipboard.getCurrentViewLayer() + 1;
+            int total = clipboard.getLayerCount();
+            client.player.sendMessage(Text.literal("Layer: " + layer + "/" + total), true);
         }
     }
 

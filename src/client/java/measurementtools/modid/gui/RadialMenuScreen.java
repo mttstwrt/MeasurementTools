@@ -8,7 +8,7 @@ import net.minecraft.text.Text;
 import java.util.List;
 
 public class RadialMenuScreen extends Screen {
-    private static final int MENU_RADIUS = 85;
+    private static final int MENU_RADIUS = 150;
     private static final int INNER_RADIUS = 35;
 
     private final int triggerKey;

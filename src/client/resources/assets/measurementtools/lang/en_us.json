@@ -12,10 +12,20 @@
     "measurementtools.action.subdivide.none": "No Subdivisions",
     "measurementtools.action.count.on": "Count: On",
     "measurementtools.action.count.off": "Count: Off",
+    "measurementtools.action.hollow.on": "Hollow: On",
+    "measurementtools.action.hollow.off": "Hollow: Off",
+    "measurementtools.action.layer.on": "Layer: On",
+    "measurementtools.action.layer.off": "Layer: Off",
+    "measurementtools.action.paste_layer.on": "Paste Layer: On",
+    "measurementtools.action.paste_layer.off": "Paste Layer: Off",
 
     "measurementtools.shape.rectangle": "Rectangle",
     "measurementtools.shape.cylinder": "Cylinder",
     "measurementtools.shape.ellipsoid": "Ellipsoid",
+
+    "measurementtools.mode.rotate": "Rotate",
+    "measurementtools.mode.layer": "Layer",
+    "measurementtools.mode.nudge": "Nudge",
 
     "measurementtools.overlay.block_counts": "Block Counts",
     "measurementtools.overlay.total": "Total: %s"

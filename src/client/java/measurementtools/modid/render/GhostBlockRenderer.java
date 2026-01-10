@@ -90,6 +90,12 @@ public class GhostBlockRenderer {
             if (anchor != null) {
                 Map<BlockPos, BlockState> visibleBlocks = getPreviewVisibleBlocks(clipboard.getClipboardBlocks());
 
+                // Filter by layer if layer view is enabled
+                if (clipboard.isLayerViewEnabled()) {
+                    int layer = clipboard.getCurrentViewLayer();
+                    visibleBlocks = filterByLayer(visibleBlocks, layer);
+                }
+
                 if (renderMode == ModConfig.GhostBlockRenderMode.SOLID) {
                     renderSolidBlocksCached(viewMatrix, cameraPos, world, anchor, visibleBlocks, true, opacity);
                 } else {
@@ -308,6 +314,19 @@ public class GhostBlockRenderer {
             }
         }
         return visible;
+    }
+
+    /**
+     * Filters blocks to only include those at the specified Y layer (relative coordinates).
+     */
+    private Map<BlockPos, BlockState> filterByLayer(Map<BlockPos, BlockState> blocks, int layer) {
+        Map<BlockPos, BlockState> filtered = new HashMap<>();
+        for (Map.Entry<BlockPos, BlockState> entry : blocks.entrySet()) {
+            if (entry.getKey().getY() == layer) {
+                filtered.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return filtered;
     }
 
     /**

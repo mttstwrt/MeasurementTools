@@ -35,6 +35,10 @@ public class ClipboardManager {
     // Locked placements: each entry is (anchorPos, relativeBlocks with states)
     private final List<LockedPlacement> lockedPlacements = new ArrayList<>();
 
+    // Layer view for paste preview
+    private boolean layerViewEnabled = false;
+    private int currentViewLayer = 0; // Relative Y level being viewed
+
     private ClipboardManager() {}
 
     public static ClipboardManager getInstance() {
@@ -234,6 +238,67 @@ public class ClipboardManager {
      */
     public void resetRotation() {
         previewRotation = 0;
+    }
+
+    // ========== Layer View Methods ==========
+
+    public boolean isLayerViewEnabled() {
+        return layerViewEnabled;
+    }
+
+    public void setLayerViewEnabled(boolean enabled) {
+        this.layerViewEnabled = enabled;
+        if (enabled && !clipboardBlocks.isEmpty()) {
+            // Reset to middle layer when enabling
+            int maxY = getClipboardMaxY();
+            currentViewLayer = maxY / 2;
+        }
+    }
+
+    public void toggleLayerView() {
+        setLayerViewEnabled(!layerViewEnabled);
+    }
+
+    public int getCurrentViewLayer() {
+        return currentViewLayer;
+    }
+
+    public void setCurrentViewLayer(int layer) {
+        this.currentViewLayer = layer;
+    }
+
+    public void cycleLayerUp() {
+        if (clipboardBlocks.isEmpty()) return;
+        int maxY = getClipboardMaxY();
+        if (currentViewLayer < maxY) {
+            currentViewLayer++;
+        }
+    }
+
+    public void cycleLayerDown() {
+        if (currentViewLayer > 0) {
+            currentViewLayer--;
+        }
+    }
+
+    /**
+     * Gets the maximum Y value in the clipboard (relative coordinates).
+     */
+    private int getClipboardMaxY() {
+        int maxY = 0;
+        for (BlockPos pos : clipboardBlocks.keySet()) {
+            if (pos.getY() > maxY) {
+                maxY = pos.getY();
+            }
+        }
+        return maxY;
+    }
+
+    /**
+     * Gets the total number of layers in the clipboard.
+     */
+    public int getLayerCount() {
+        return getClipboardMaxY() + 1;
     }
 
     /**

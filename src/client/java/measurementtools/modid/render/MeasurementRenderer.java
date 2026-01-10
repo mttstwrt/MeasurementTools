@@ -17,6 +17,7 @@ public class MeasurementRenderer {
     private final Map<ShapeMode, ShapeRenderer> renderers = new EnumMap<>(ShapeMode.class);
     private final SubdivisionRenderer subdivisionRenderer = new SubdivisionRenderer();
     private final GhostBlockRenderer ghostBlockRenderer = new GhostBlockRenderer();
+    private final HollowShapeRenderer hollowShapeRenderer = new HollowShapeRenderer();
 
     private MeasurementRenderer() {
         renderers.put(ShapeMode.RECTANGLE, new RectangleRenderer());
@@ -43,22 +44,28 @@ public class MeasurementRenderer {
                 true
             );
 
-            // Render the shape
-            ShapeRenderer renderer = renderers.get(mode);
-            if (renderer != null) {
-                renderer.render(camera, viewMatrix, selection, config);
-            }
+            // Check if hollow mode is enabled
+            if (manager.isHollowMode()) {
+                // Render hollow shape (individual block outlines)
+                hollowShapeRenderer.render(camera, viewMatrix, mode, config);
+            } else {
+                // Render normal wireframe shape
+                ShapeRenderer renderer = renderers.get(mode);
+                if (renderer != null) {
+                    renderer.render(camera, viewMatrix, selection, config);
+                }
 
-            // Render subdivisions if enabled (only for rectangle mode)
-            if (subdivisions > 1 && mode == ShapeMode.RECTANGLE) {
-                BlockPos minPos = manager.getMinPos();
-                BlockPos maxPos = manager.getMaxPos();
-                if (minPos != null && maxPos != null) {
-                    Box bounds = new Box(
-                        minPos.getX(), minPos.getY(), minPos.getZ(),
-                        maxPos.getX() + 1, maxPos.getY() + 1, maxPos.getZ() + 1
-                    );
-                    subdivisionRenderer.renderSubdivisions(camera, viewMatrix, bounds, subdivisions, 1.0f);
+                // Render subdivisions if enabled (only for rectangle mode, not in hollow mode)
+                if (subdivisions > 1 && mode == ShapeMode.RECTANGLE) {
+                    BlockPos minPos = manager.getMinPos();
+                    BlockPos maxPos = manager.getMaxPos();
+                    if (minPos != null && maxPos != null) {
+                        Box bounds = new Box(
+                            minPos.getX(), minPos.getY(), minPos.getZ(),
+                            maxPos.getX() + 1, maxPos.getY() + 1, maxPos.getZ() + 1
+                        );
+                        subdivisionRenderer.renderSubdivisions(camera, viewMatrix, bounds, subdivisions, 1.0f);
+                    }
                 }
             }
         }
@@ -73,5 +80,13 @@ public class MeasurementRenderer {
      */
     public void invalidateGhostBlockCaches() {
         ghostBlockRenderer.invalidateCaches();
+    }
+
+    /**
+     * Invalidates hollow shape render cache.
+     * Call when selection or layer changes.
+     */
+    public void invalidateHollowShapeCache() {
+        hollowShapeRenderer.invalidateCache();
     }
 }

@@ -16,6 +16,11 @@ public class SelectionManager {
     private EllipsoidMode ellipsoidMode = EllipsoidMode.FIT_TO_BOX;
     private int subdivisionCount = 0;
     private boolean blockCountingEnabled = false;
+    private boolean hollowMode = false;
+
+    // Layer mode state
+    private boolean layerModeEnabled = false;
+    private int currentLayer = 0; // Relative to minY
 
     private SelectionManager() {}
 
@@ -147,5 +152,71 @@ public class SelectionManager {
 
     public void setEllipsoidMode(EllipsoidMode mode) {
         this.ellipsoidMode = mode;
+    }
+
+    public boolean isHollowMode() {
+        return hollowMode;
+    }
+
+    public void setHollowMode(boolean hollowMode) {
+        this.hollowMode = hollowMode;
+    }
+
+    public void toggleHollowMode() {
+        this.hollowMode = !this.hollowMode;
+    }
+
+    public boolean isLayerModeEnabled() {
+        return layerModeEnabled;
+    }
+
+    public void setLayerModeEnabled(boolean enabled) {
+        this.layerModeEnabled = enabled;
+        if (enabled) {
+            // Reset layer to middle when enabling
+            int height = getMaxY() - getMinY();
+            currentLayer = height / 2;
+        }
+    }
+
+    public void toggleLayerMode() {
+        setLayerModeEnabled(!layerModeEnabled);
+    }
+
+    public int getCurrentLayer() {
+        return currentLayer;
+    }
+
+    public void setCurrentLayer(int layer) {
+        this.currentLayer = layer;
+    }
+
+    public void cycleLayerUp() {
+        if (!hasSelection()) return;
+        int maxHeight = getMaxY() - getMinY();
+        if (currentLayer < maxHeight) {
+            currentLayer++;
+        }
+    }
+
+    public void cycleLayerDown() {
+        if (currentLayer > 0) {
+            currentLayer--;
+        }
+    }
+
+    /**
+     * Gets the absolute Y coordinate of the current layer.
+     */
+    public int getCurrentLayerY() {
+        return getMinY() + currentLayer;
+    }
+
+    /**
+     * Gets the total number of layers in the current selection.
+     */
+    public int getLayerCount() {
+        if (!hasSelection()) return 0;
+        return getMaxY() - getMinY() + 1;
     }
 }
