@@ -187,6 +187,30 @@ public class RadialMenuRegistry {
             }
         });
 
+        // Spline Mode
+        register(new RadialMenuAction() {
+            @Override
+            public Text getName() {
+                return Text.literal("Spline");
+            }
+
+            @Override
+            public void execute() {
+                SelectionManager.getInstance().setShapeMode(ShapeMode.SPLINE);
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+
+            @Override
+            public int getColor() {
+                return SelectionManager.getInstance().getShapeMode() == ShapeMode.SPLINE
+                    ? 0x66FF66 : 0xFFFFFF;
+            }
+        });
+
         // Subdivision Toggle
         register(new RadialMenuAction() {
             @Override

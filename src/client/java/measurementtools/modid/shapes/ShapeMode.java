@@ -6,7 +6,8 @@ import net.minecraft.util.Identifier;
 public enum ShapeMode {
     RECTANGLE("rectangle", "measurementtools.shape.rectangle"),
     CYLINDER("cylinder", "measurementtools.shape.cylinder"),
-    ELLIPSOID("ellipsoid", "measurementtools.shape.ellipsoid");
+    ELLIPSOID("ellipsoid", "measurementtools.shape.ellipsoid"),
+    SPLINE("spline", "measurementtools.shape.spline");
 
     private final String id;
     private final String translationKey;

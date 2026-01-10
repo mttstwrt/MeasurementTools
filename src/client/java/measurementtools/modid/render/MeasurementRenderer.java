@@ -23,6 +23,7 @@ public class MeasurementRenderer {
         renderers.put(ShapeMode.RECTANGLE, new RectangleRenderer());
         renderers.put(ShapeMode.CYLINDER, new CylinderRenderer());
         renderers.put(ShapeMode.ELLIPSOID, new EllipsoidRenderer());
+        renderers.put(ShapeMode.SPLINE, new SplineRenderer());
     }
 
     public static MeasurementRenderer getInstance() {

@@ -28,6 +28,7 @@ public class HollowBlockCalculator {
             case RECTANGLE -> calculateRectangleHollow(manager, filterLayer);
             case CYLINDER -> calculateCylinderHollow(manager, filterLayer);
             case ELLIPSOID -> calculateEllipsoidHollow(manager, filterLayer);
+            case SPLINE -> Set.of(); // Spline is a curve, hollow mode not applicable
         };
     }
 
