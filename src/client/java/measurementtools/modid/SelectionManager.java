@@ -31,12 +31,25 @@ public class SelectionManager {
 
     public void addBlock(BlockPos pos) {
         if (pos != null && !selectedBlocks.contains(pos)) {
+            UndoRedoManager.getInstance().saveState();
             selectedBlocks.add(pos);
         }
     }
 
     public void clearSelection() {
+        if (!selectedBlocks.isEmpty()) {
+            UndoRedoManager.getInstance().saveState();
+        }
         selectedBlocks.clear();
+    }
+
+    /**
+     * Sets the selected blocks list directly (used for undo/redo).
+     * Does not record history.
+     */
+    public void setSelectedBlocks(List<BlockPos> blocks) {
+        selectedBlocks.clear();
+        selectedBlocks.addAll(blocks);
     }
 
     public List<BlockPos> getSelectedBlocks() {

@@ -2,6 +2,7 @@ package measurementtools.modid.gui;
 
 import measurementtools.modid.ClipboardManager;
 import measurementtools.modid.SelectionManager;
+import measurementtools.modid.UndoRedoManager;
 import measurementtools.modid.shapes.ShapeMode;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
@@ -344,6 +345,52 @@ public class RadialMenuRegistry {
                 ClipboardManager clipboard = ClipboardManager.getInstance();
                 boolean active = selection.isLayerModeEnabled() || clipboard.isLayerViewEnabled();
                 return active ? 0x66FF99 : 0xFFFFFF;
+            }
+        });
+
+        // Undo
+        register(new RadialMenuAction() {
+            @Override
+            public Text getName() {
+                return Text.literal("Undo");
+            }
+
+            @Override
+            public void execute() {
+                UndoRedoManager.getInstance().undo();
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return UndoRedoManager.getInstance().canUndo();
+            }
+
+            @Override
+            public int getColor() {
+                return UndoRedoManager.getInstance().canUndo() ? 0xFFCC66 : 0x888888;
+            }
+        });
+
+        // Redo
+        register(new RadialMenuAction() {
+            @Override
+            public Text getName() {
+                return Text.literal("Redo");
+            }
+
+            @Override
+            public void execute() {
+                UndoRedoManager.getInstance().redo();
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return UndoRedoManager.getInstance().canRedo();
+            }
+
+            @Override
+            public int getColor() {
+                return UndoRedoManager.getInstance().canRedo() ? 0x66CCFF : 0x888888;
             }
         });
     }

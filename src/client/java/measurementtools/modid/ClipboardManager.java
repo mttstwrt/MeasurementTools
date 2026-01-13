@@ -320,6 +320,8 @@ public class ClipboardManager {
             return;
         }
 
+        UndoRedoManager.getInstance().saveState();
+
         // Create a copy of the clipboard data with current rotation applied
         Map<BlockPos, BlockState> placementBlocks = new HashMap<>(getClipboardBlocks());
         lockedPlacements.add(new LockedPlacement(previewAnchorPos, placementBlocks));
@@ -334,6 +336,9 @@ public class ClipboardManager {
     }
 
     public void clearLockedPlacements() {
+        if (!lockedPlacements.isEmpty()) {
+            UndoRedoManager.getInstance().saveState();
+        }
         // Clear each placement's block map before clearing the list to help GC
         for (LockedPlacement placement : lockedPlacements) {
             placement.clear();
@@ -342,6 +347,29 @@ public class ClipboardManager {
         // Reset layer view since there's nothing to view
         layerViewEnabled = false;
         currentViewLayer = 0;
+    }
+
+    /**
+     * Sets the locked placements directly (used for undo/redo).
+     * Does not record history.
+     */
+    public void setLockedPlacements(List<UndoRedoManager.LockedPlacementData> placementData) {
+        // Clear existing without recording history
+        for (LockedPlacement placement : lockedPlacements) {
+            placement.clear();
+        }
+        lockedPlacements.clear();
+
+        // Restore from data
+        for (UndoRedoManager.LockedPlacementData data : placementData) {
+            lockedPlacements.add(new LockedPlacement(data.anchorPos, new HashMap<>(data.blocks)));
+        }
+
+        // Reset layer view if no placements
+        if (lockedPlacements.isEmpty()) {
+            layerViewEnabled = false;
+            currentViewLayer = 0;
+        }
     }
 
     public void clearClipboard() {
