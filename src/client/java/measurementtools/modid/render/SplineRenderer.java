@@ -1,6 +1,7 @@
 package measurementtools.modid.render;
 
 import measurementtools.modid.SelectionManager;
+import measurementtools.modid.util.SplineMath;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
@@ -19,10 +20,11 @@ import java.util.List;
  * Supports tube radius for creating cylindrical paths around the spline.
  */
 public class SplineRenderer implements ShapeRenderer {
-    // Number of line segments between each pair of control points
     private static final int SEGMENTS_PER_SPAN = 16;
-    // Number of points around the tube circumference
     private static final int TUBE_CIRCLE_SEGMENTS = 16;
+    private static final int BUFFER_SIZE = 8192;
+
+    private BufferAllocator buffer;
 
     @Override
     public void render(Camera camera, Matrix4f viewMatrix, List<BlockPos> selection, RenderConfig config) {
@@ -32,7 +34,10 @@ public class SplineRenderer implements ShapeRenderer {
         matrices.multiplyPositionMatrix(viewMatrix);
         Vec3d cameraPos = camera.getPos();
 
-        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(4096));
+        if (buffer == null) {
+            buffer = new BufferAllocator(BUFFER_SIZE);
+        }
+        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(buffer);
         VertexConsumer lines = immediate.getBuffer(RenderLayer.getLines());
 
         Matrix4f matrix = matrices.peek().getPositionMatrix();
@@ -42,12 +47,7 @@ public class SplineRenderer implements ShapeRenderer {
         float b = config.blue();
         float a = config.alpha();
 
-        // Convert BlockPos list to Vec3d (block centers)
-        Vec3d[] points = new Vec3d[selection.size()];
-        for (int i = 0; i < selection.size(); i++) {
-            BlockPos pos = selection.get(i);
-            points[i] = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
-        }
+        Vec3d[] points = SplineMath.blockPosListToVec3d(selection);
 
         int tubeRadius = SelectionManager.getInstance().getSplineRadius();
 
@@ -73,9 +73,8 @@ public class SplineRenderer implements ShapeRenderer {
 
         // Draw total length label
         if (config.showLabels() && points.length >= 2) {
-            double totalLength = calculateSplineLength(points);
-            // Place label at the midpoint of the spline
-            Vec3d midPoint = getSplinePoint(points, 0.5);
+            double totalLength = SplineMath.calculateSplineLength(points, SEGMENTS_PER_SPAN);
+            Vec3d midPoint = SplineMath.getSplinePoint(points, 0.5);
 
             matrices.push();
             matrices.translate(
@@ -96,122 +95,22 @@ public class SplineRenderer implements ShapeRenderer {
      */
     private void drawCatmullRomSpline(Matrix4f matrix, VertexConsumer lines, Vec3d[] points,
                                        Vec3d cameraPos, float r, float g, float b, float a) {
-        // For Catmull-Rom, we need 4 points for each segment
-        // We'll extrapolate phantom points at the start and end
         int n = points.length;
 
         for (int i = 0; i < n - 1; i++) {
-            // Get the 4 control points for this segment
-            Vec3d p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
+            Vec3d p0 = (i == 0) ? SplineMath.extrapolateStart(points[0], points[1]) : points[i - 1];
             Vec3d p1 = points[i];
             Vec3d p2 = points[i + 1];
-            Vec3d p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+            Vec3d p3 = (i == n - 2) ? SplineMath.extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
 
-            // Draw segments along this span
             Vec3d prevPoint = p1;
             for (int seg = 1; seg <= SEGMENTS_PER_SPAN; seg++) {
-                float t = (float) seg / SEGMENTS_PER_SPAN;
-                Vec3d currPoint = catmullRom(p0, p1, p2, p3, t);
+                double t = (double) seg / SEGMENTS_PER_SPAN;
+                Vec3d currPoint = SplineMath.catmullRom(p0, p1, p2, p3, t);
                 drawLine(matrix, lines, prevPoint, currPoint, cameraPos, r, g, b, a);
                 prevPoint = currPoint;
             }
         }
-    }
-
-    /**
-     * Catmull-Rom spline interpolation.
-     * Returns a point on the curve between p1 and p2.
-     */
-    private Vec3d catmullRom(Vec3d p0, Vec3d p1, Vec3d p2, Vec3d p3, float t) {
-        float t2 = t * t;
-        float t3 = t2 * t;
-
-        // Catmull-Rom basis matrix coefficients
-        double x = 0.5 * ((2 * p1.x) +
-                         (-p0.x + p2.x) * t +
-                         (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
-                         (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
-
-        double y = 0.5 * ((2 * p1.y) +
-                         (-p0.y + p2.y) * t +
-                         (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
-                         (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
-
-        double z = 0.5 * ((2 * p1.z) +
-                         (-p0.z + p2.z) * t +
-                         (2 * p0.z - 5 * p1.z + 4 * p2.z - p3.z) * t2 +
-                         (-p0.z + 3 * p1.z - 3 * p2.z + p3.z) * t3);
-
-        return new Vec3d(x, y, z);
-    }
-
-    /**
-     * Extrapolates a phantom point before the start of the curve.
-     */
-    private Vec3d extrapolateStart(Vec3d p0, Vec3d p1) {
-        return new Vec3d(
-            2 * p0.x - p1.x,
-            2 * p0.y - p1.y,
-            2 * p0.z - p1.z
-        );
-    }
-
-    /**
-     * Extrapolates a phantom point after the end of the curve.
-     */
-    private Vec3d extrapolateEnd(Vec3d pn1, Vec3d pn) {
-        return new Vec3d(
-            2 * pn.x - pn1.x,
-            2 * pn.y - pn1.y,
-            2 * pn.z - pn1.z
-        );
-    }
-
-    /**
-     * Gets a point on the spline at parameter t (0 to 1 across entire spline).
-     */
-    private Vec3d getSplinePoint(Vec3d[] points, double t) {
-        if (points.length < 2) return points[0];
-        if (points.length == 2) {
-            return new Vec3d(
-                points[0].x + (points[1].x - points[0].x) * t,
-                points[0].y + (points[1].y - points[0].y) * t,
-                points[0].z + (points[1].z - points[0].z) * t
-            );
-        }
-
-        int n = points.length;
-        double scaledT = t * (n - 1);
-        int i = (int) Math.floor(scaledT);
-        if (i >= n - 1) i = n - 2;
-        float localT = (float) (scaledT - i);
-
-        Vec3d p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
-        Vec3d p1 = points[i];
-        Vec3d p2 = points[i + 1];
-        Vec3d p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
-
-        return catmullRom(p0, p1, p2, p3, localT);
-    }
-
-    /**
-     * Calculates approximate total length of the spline.
-     */
-    private double calculateSplineLength(Vec3d[] points) {
-        if (points.length < 2) return 0;
-
-        double totalLength = 0;
-        int totalSegments = (points.length - 1) * SEGMENTS_PER_SPAN;
-        Vec3d prevPoint = points[0];
-
-        for (int seg = 1; seg <= totalSegments; seg++) {
-            double t = (double) seg / totalSegments;
-            Vec3d currPoint = getSplinePoint(points, t);
-            totalLength += prevPoint.distanceTo(currPoint);
-            prevPoint = currPoint;
-        }
-
-        return totalLength;
     }
 
     private void drawLine(Matrix4f matrix, VertexConsumer lines, Vec3d from, Vec3d to,
@@ -268,30 +167,26 @@ public class SplineRenderer implements ShapeRenderer {
     private void drawTubeForSpline(Matrix4f matrix, VertexConsumer lines, Vec3d[] points,
                                     int radius, Vec3d cameraPos, float r, float g, float b, float a) {
         int n = points.length;
-        int circlesPerSpan = 4; // Number of circles between each control point pair
+        int circlesPerSpan = 4;
 
         Vec3d prevCenter = null;
         Vec3d prevTangent = null;
 
         for (int i = 0; i < n - 1; i++) {
-            Vec3d p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
+            Vec3d p0 = (i == 0) ? SplineMath.extrapolateStart(points[0], points[1]) : points[i - 1];
             Vec3d p1 = points[i];
             Vec3d p2 = points[i + 1];
-            Vec3d p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+            Vec3d p3 = (i == n - 2) ? SplineMath.extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
 
             for (int seg = 0; seg <= circlesPerSpan; seg++) {
-                // Skip first point of subsequent segments to avoid duplicates
                 if (i > 0 && seg == 0) continue;
 
-                float t = (float) seg / circlesPerSpan;
-                Vec3d center = catmullRom(p0, p1, p2, p3, t);
-
-                // Calculate tangent (derivative of Catmull-Rom)
-                Vec3d tangent = catmullRomDerivative(p0, p1, p2, p3, t).normalize();
+                double t = (double) seg / circlesPerSpan;
+                Vec3d center = SplineMath.catmullRom(p0, p1, p2, p3, t);
+                Vec3d tangent = SplineMath.catmullRomDerivative(p0, p1, p2, p3, t).normalize();
 
                 drawTubeCircle(matrix, lines, center, tangent, radius, cameraPos, r, g, b, a);
 
-                // Draw longitudinal lines to previous circle
                 if (prevCenter != null) {
                     drawTubeLongitudinalLinesBetween(matrix, lines, prevCenter, center,
                         prevTangent, tangent, radius, cameraPos, r, g, b, a);
@@ -308,8 +203,7 @@ public class SplineRenderer implements ShapeRenderer {
      */
     private void drawTubeCircle(Matrix4f matrix, VertexConsumer lines, Vec3d center, Vec3d direction,
                                  int radius, Vec3d cameraPos, float r, float g, float b, float a) {
-        // Find two perpendicular vectors to the direction
-        Vec3d perp1 = findPerpendicular(direction);
+        Vec3d perp1 = SplineMath.findPerpendicular(direction);
         Vec3d perp2 = direction.crossProduct(perp1).normalize();
 
         Vec3d[] circlePoints = new Vec3d[TUBE_CIRCLE_SEGMENTS];
@@ -334,7 +228,7 @@ public class SplineRenderer implements ShapeRenderer {
     private void drawTubeLongitudinalLines(Matrix4f matrix, VertexConsumer lines,
                                             Vec3d from, Vec3d to, Vec3d direction, int radius,
                                             Vec3d cameraPos, float r, float g, float b, float a) {
-        Vec3d perp1 = findPerpendicular(direction);
+        Vec3d perp1 = SplineMath.findPerpendicular(direction);
         Vec3d perp2 = direction.crossProduct(perp1).normalize();
 
         int longitudinalCount = 8; // Number of lines along the tube
@@ -358,10 +252,10 @@ public class SplineRenderer implements ShapeRenderer {
                                                    Vec3d center1, Vec3d center2,
                                                    Vec3d tangent1, Vec3d tangent2, int radius,
                                                    Vec3d cameraPos, float r, float g, float b, float a) {
-        Vec3d perp1_1 = findPerpendicular(tangent1);
+        Vec3d perp1_1 = SplineMath.findPerpendicular(tangent1);
         Vec3d perp2_1 = tangent1.crossProduct(perp1_1).normalize();
 
-        Vec3d perp1_2 = findPerpendicular(tangent2);
+        Vec3d perp1_2 = SplineMath.findPerpendicular(tangent2);
         Vec3d perp2_2 = tangent2.crossProduct(perp1_2).normalize();
 
         int longitudinalCount = 8;
@@ -380,36 +274,4 @@ public class SplineRenderer implements ShapeRenderer {
         }
     }
 
-    /**
-     * Finds a vector perpendicular to the given direction.
-     */
-    private Vec3d findPerpendicular(Vec3d direction) {
-        // Use world up as reference, unless direction is nearly vertical
-        Vec3d up = new Vec3d(0, 1, 0);
-        if (Math.abs(direction.dotProduct(up)) > 0.99) {
-            up = new Vec3d(1, 0, 0); // Use world X if direction is vertical
-        }
-        return direction.crossProduct(up).normalize();
-    }
-
-    /**
-     * Derivative of Catmull-Rom spline (tangent direction).
-     */
-    private Vec3d catmullRomDerivative(Vec3d p0, Vec3d p1, Vec3d p2, Vec3d p3, float t) {
-        float t2 = t * t;
-
-        double dx = 0.5 * ((-p0.x + p2.x) +
-                          2 * (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t +
-                          3 * (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t2);
-
-        double dy = 0.5 * ((-p0.y + p2.y) +
-                          2 * (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t +
-                          3 * (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t2);
-
-        double dz = 0.5 * ((-p0.z + p2.z) +
-                          2 * (2 * p0.z - 5 * p1.z + 4 * p2.z - p3.z) * t +
-                          3 * (-p0.z + 3 * p1.z - 3 * p2.z + p3.z) * t2);
-
-        return new Vec3d(dx, dy, dz);
-    }
 }

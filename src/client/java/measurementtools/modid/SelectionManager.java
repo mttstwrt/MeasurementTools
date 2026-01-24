@@ -23,6 +23,11 @@ public class SelectionManager {
     private boolean layerModeEnabled = false;
     private int currentLayer = 0; // Relative to minY
 
+    // Cached bounds (invalidated when selection changes)
+    private BlockPos cachedMinPos = null;
+    private BlockPos cachedMaxPos = null;
+    private boolean boundsCacheDirty = true;
+
     private SelectionManager() {}
 
     public static SelectionManager getInstance() {
@@ -33,6 +38,7 @@ public class SelectionManager {
         if (pos != null && !selectedBlocks.contains(pos)) {
             UndoRedoManager.getInstance().saveState();
             selectedBlocks.add(pos);
+            invalidateBoundsCache();
         }
     }
 
@@ -41,6 +47,7 @@ public class SelectionManager {
             UndoRedoManager.getInstance().saveState();
         }
         selectedBlocks.clear();
+        invalidateBoundsCache();
     }
 
     /**
@@ -50,6 +57,38 @@ public class SelectionManager {
     public void setSelectedBlocks(List<BlockPos> blocks) {
         selectedBlocks.clear();
         selectedBlocks.addAll(blocks);
+        invalidateBoundsCache();
+    }
+
+    private void invalidateBoundsCache() {
+        boundsCacheDirty = true;
+        cachedMinPos = null;
+        cachedMaxPos = null;
+    }
+
+    private void updateBoundsCache() {
+        if (!boundsCacheDirty) return;
+
+        if (selectedBlocks.isEmpty()) {
+            cachedMinPos = null;
+            cachedMaxPos = null;
+        } else {
+            int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+            int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+
+            for (BlockPos pos : selectedBlocks) {
+                minX = Math.min(minX, pos.getX());
+                minY = Math.min(minY, pos.getY());
+                minZ = Math.min(minZ, pos.getZ());
+                maxX = Math.max(maxX, pos.getX());
+                maxY = Math.max(maxY, pos.getY());
+                maxZ = Math.max(maxZ, pos.getZ());
+            }
+
+            cachedMinPos = new BlockPos(minX, minY, minZ);
+            cachedMaxPos = new BlockPos(maxX, maxY, maxZ);
+        }
+        boundsCacheDirty = false;
     }
 
     public List<BlockPos> getSelectedBlocks() {
@@ -61,25 +100,13 @@ public class SelectionManager {
     }
 
     public BlockPos getMinPos() {
-        if (selectedBlocks.isEmpty()) return null;
-        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
-        for (BlockPos pos : selectedBlocks) {
-            if (pos.getX() < minX) minX = pos.getX();
-            if (pos.getY() < minY) minY = pos.getY();
-            if (pos.getZ() < minZ) minZ = pos.getZ();
-        }
-        return new BlockPos(minX, minY, minZ);
+        updateBoundsCache();
+        return cachedMinPos;
     }
 
     public BlockPos getMaxPos() {
-        if (selectedBlocks.isEmpty()) return null;
-        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
-        for (BlockPos pos : selectedBlocks) {
-            if (pos.getX() > maxX) maxX = pos.getX();
-            if (pos.getY() > maxY) maxY = pos.getY();
-            if (pos.getZ() > maxZ) maxZ = pos.getZ();
-        }
-        return new BlockPos(maxX, maxY, maxZ);
+        updateBoundsCache();
+        return cachedMaxPos;
     }
 
     public void setShapeMode(ShapeMode mode) {
@@ -172,21 +199,13 @@ public class SelectionManager {
     }
 
     public int getMinY() {
-        if (selectedBlocks.isEmpty()) return 0;
-        int minY = Integer.MAX_VALUE;
-        for (BlockPos pos : selectedBlocks) {
-            if (pos.getY() < minY) minY = pos.getY();
-        }
-        return minY;
+        BlockPos min = getMinPos();
+        return min != null ? min.getY() : 0;
     }
 
     public int getMaxY() {
-        if (selectedBlocks.isEmpty()) return 0;
-        int maxY = Integer.MIN_VALUE;
-        for (BlockPos pos : selectedBlocks) {
-            if (pos.getY() > maxY) maxY = pos.getY();
-        }
-        return maxY;
+        BlockPos max = getMaxPos();
+        return max != null ? max.getY() : 0;
     }
 
     public boolean isBlockCountingEnabled() {

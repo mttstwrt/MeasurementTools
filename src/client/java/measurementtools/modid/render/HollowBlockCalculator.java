@@ -3,7 +3,9 @@ package measurementtools.modid.render;
 import measurementtools.modid.SelectionManager;
 import measurementtools.modid.shapes.EllipsoidMode;
 import measurementtools.modid.shapes.ShapeMode;
+import measurementtools.modid.util.SplineMath;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -199,6 +201,9 @@ public class HollowBlockCalculator {
         return blocks;
     }
 
+    private static final int SPLINE_SAMPLES_PER_SEGMENT = 32;
+    private static final int DISTANCE_SAMPLES_PER_SEGMENT = 16;
+
     /**
      * Calculates all blocks that a spline curve passes through.
      * Uses Catmull-Rom interpolation and samples many points along the curve.
@@ -211,35 +216,24 @@ public class HollowBlockCalculator {
         if (selection.size() < 2) return blocks;
 
         int tubeRadius = manager.getSplineRadius();
-
-        // Convert to double arrays for easier math
-        double[][] points = new double[selection.size()][3];
-        for (int i = 0; i < selection.size(); i++) {
-            BlockPos pos = selection.get(i);
-            points[i][0] = pos.getX() + 0.5;
-            points[i][1] = pos.getY() + 0.5;
-            points[i][2] = pos.getZ() + 0.5;
-        }
-
-        // Sample points along the spline and collect block positions
+        Vec3d[] points = SplineMath.blockPosListToVec3d(selection);
         int n = points.length;
-        int samplesPerSegment = 32; // Higher = more accurate block detection
 
         if (tubeRadius == 0) {
             // No radius - just collect blocks along the center line
             for (int i = 0; i < n - 1; i++) {
-                double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
-                double[] p1 = points[i];
-                double[] p2 = points[i + 1];
-                double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+                Vec3d p0 = (i == 0) ? SplineMath.extrapolateStart(points[0], points[1]) : points[i - 1];
+                Vec3d p1 = points[i];
+                Vec3d p2 = points[i + 1];
+                Vec3d p3 = (i == n - 2) ? SplineMath.extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
 
-                for (int seg = 0; seg <= samplesPerSegment; seg++) {
-                    double t = (double) seg / samplesPerSegment;
-                    double[] point = catmullRom(p0, p1, p2, p3, t);
+                for (int seg = 0; seg <= SPLINE_SAMPLES_PER_SEGMENT; seg++) {
+                    double t = (double) seg / SPLINE_SAMPLES_PER_SEGMENT;
+                    Vec3d point = SplineMath.catmullRom(p0, p1, p2, p3, t);
 
-                    int blockX = (int) Math.floor(point[0]);
-                    int blockY = (int) Math.floor(point[1]);
-                    int blockZ = (int) Math.floor(point[2]);
+                    int blockX = (int) Math.floor(point.x);
+                    int blockY = (int) Math.floor(point.y);
+                    int blockZ = (int) Math.floor(point.z);
 
                     if (filterLayer == -1 || blockY == filterLayer) {
                         blocks.add(new BlockPos(blockX, blockY, blockZ));
@@ -251,50 +245,32 @@ public class HollowBlockCalculator {
             Set<BlockPos> allTubeBlocks = new HashSet<>();
 
             for (int i = 0; i < n - 1; i++) {
-                double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
-                double[] p1 = points[i];
-                double[] p2 = points[i + 1];
-                double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+                Vec3d p0 = (i == 0) ? SplineMath.extrapolateStart(points[0], points[1]) : points[i - 1];
+                Vec3d p1 = points[i];
+                Vec3d p2 = points[i + 1];
+                Vec3d p3 = (i == n - 2) ? SplineMath.extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
 
-                for (int seg = 0; seg <= samplesPerSegment; seg++) {
-                    double t = (double) seg / samplesPerSegment;
-                    double[] center = catmullRom(p0, p1, p2, p3, t);
-                    double[] tangent = catmullRomDerivative(p0, p1, p2, p3, t);
-                    normalize(tangent);
+                for (int seg = 0; seg <= SPLINE_SAMPLES_PER_SEGMENT; seg++) {
+                    double t = (double) seg / SPLINE_SAMPLES_PER_SEGMENT;
+                    Vec3d center = SplineMath.catmullRom(p0, p1, p2, p3, t);
+                    Vec3d tangent = SplineMath.catmullRomDerivative(p0, p1, p2, p3, t).normalize();
 
-                    // Find perpendicular vectors
-                    double[] perp1 = findPerpendicular(tangent);
-                    double[] perp2 = crossProduct(tangent, perp1);
-                    normalize(perp2);
-
-                    // Sample blocks in a disk perpendicular to the spline
+                    // Sample blocks in a volume around each spline point
                     for (int dx = -tubeRadius; dx <= tubeRadius; dx++) {
                         for (int dy = -tubeRadius; dy <= tubeRadius; dy++) {
                             for (int dz = -tubeRadius; dz <= tubeRadius; dz++) {
-                                // Check if block center is within tube radius
-                                int blockX = (int) Math.floor(center[0]) + dx;
-                                int blockY = (int) Math.floor(center[1]) + dy;
-                                int blockZ = (int) Math.floor(center[2]) + dz;
+                                int blockX = (int) Math.floor(center.x) + dx;
+                                int blockY = (int) Math.floor(center.y) + dy;
+                                int blockZ = (int) Math.floor(center.z) + dz;
 
-                                double bcx = blockX + 0.5;
-                                double bcy = blockY + 0.5;
-                                double bcz = blockZ + 0.5;
-
-                                // Project block center onto the plane perpendicular to tangent at this point
-                                double vx = bcx - center[0];
-                                double vy = bcy - center[1];
-                                double vz = bcz - center[2];
+                                Vec3d blockCenter = new Vec3d(blockX + 0.5, blockY + 0.5, blockZ + 0.5);
+                                Vec3d toBlock = blockCenter.subtract(center);
 
                                 // Distance along tangent (we only care about perpendicular distance)
-                                double alongTangent = vx * tangent[0] + vy * tangent[1] + vz * tangent[2];
+                                double alongTangent = toBlock.dotProduct(tangent);
+                                Vec3d perpComponent = toBlock.subtract(tangent.multiply(alongTangent));
+                                double perpDist = perpComponent.length();
 
-                                // Perpendicular component
-                                double px = vx - alongTangent * tangent[0];
-                                double py = vy - alongTangent * tangent[1];
-                                double pz = vz - alongTangent * tangent[2];
-                                double perpDist = Math.sqrt(px * px + py * py + pz * pz);
-
-                                // Include blocks within radius
                                 if (perpDist <= tubeRadius + 0.5) {
                                     allTubeBlocks.add(new BlockPos(blockX, blockY, blockZ));
                                 }
@@ -308,8 +284,8 @@ public class HollowBlockCalculator {
             for (BlockPos pos : allTubeBlocks) {
                 if (filterLayer != -1 && pos.getY() != filterLayer) continue;
 
-                // Check if this block is on the surface by checking distance from spline
-                double minDist = getMinDistanceToSpline(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, points);
+                Vec3d blockCenter = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+                double minDist = SplineMath.getMinDistanceToSpline(blockCenter, points, DISTANCE_SAMPLES_PER_SEGMENT);
 
                 // Block is on surface if it's near the outer edge of the tube
                 if (minDist >= tubeRadius - 0.5) {
@@ -319,128 +295,5 @@ public class HollowBlockCalculator {
         }
 
         return blocks;
-    }
-
-    /**
-     * Gets the minimum distance from a point to the spline curve.
-     */
-    private static double getMinDistanceToSpline(double px, double py, double pz, double[][] points) {
-        double minDist = Double.MAX_VALUE;
-        int n = points.length;
-        int samplesPerSegment = 16;
-
-        for (int i = 0; i < n - 1; i++) {
-            double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
-            double[] p1 = points[i];
-            double[] p2 = points[i + 1];
-            double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
-
-            for (int seg = 0; seg <= samplesPerSegment; seg++) {
-                double t = (double) seg / samplesPerSegment;
-                double[] splinePoint = catmullRom(p0, p1, p2, p3, t);
-
-                double dx = px - splinePoint[0];
-                double dy = py - splinePoint[1];
-                double dz = pz - splinePoint[2];
-                double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-                if (dist < minDist) {
-                    minDist = dist;
-                }
-            }
-        }
-
-        return minDist;
-    }
-
-    /**
-     * Derivative of Catmull-Rom spline.
-     */
-    private static double[] catmullRomDerivative(double[] p0, double[] p1, double[] p2, double[] p3, double t) {
-        double t2 = t * t;
-        double[] result = new double[3];
-
-        for (int i = 0; i < 3; i++) {
-            result[i] = 0.5 * ((-p0[i] + p2[i]) +
-                              2 * (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t +
-                              3 * (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t2);
-        }
-        return result;
-    }
-
-    /**
-     * Normalizes a 3D vector in place.
-     */
-    private static void normalize(double[] v) {
-        double len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-        if (len > 0.0001) {
-            v[0] /= len;
-            v[1] /= len;
-            v[2] /= len;
-        }
-    }
-
-    /**
-     * Finds a vector perpendicular to the given direction.
-     */
-    private static double[] findPerpendicular(double[] direction) {
-        double[] up = {0, 1, 0};
-        double dot = direction[0] * up[0] + direction[1] * up[1] + direction[2] * up[2];
-        if (Math.abs(dot) > 0.99) {
-            up = new double[]{1, 0, 0};
-        }
-        double[] result = crossProduct(direction, up);
-        normalize(result);
-        return result;
-    }
-
-    /**
-     * Cross product of two 3D vectors.
-     */
-    private static double[] crossProduct(double[] a, double[] b) {
-        return new double[]{
-            a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0]
-        };
-    }
-
-    /**
-     * Catmull-Rom spline interpolation.
-     */
-    private static double[] catmullRom(double[] p0, double[] p1, double[] p2, double[] p3, double t) {
-        double t2 = t * t;
-        double t3 = t2 * t;
-
-        double[] result = new double[3];
-        for (int i = 0; i < 3; i++) {
-            result[i] = 0.5 * ((2 * p1[i]) +
-                              (-p0[i] + p2[i]) * t +
-                              (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t2 +
-                              (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t3);
-        }
-        return result;
-    }
-
-    /**
-     * Extrapolates a phantom point before the start of the curve.
-     */
-    private static double[] extrapolateStart(double[] p0, double[] p1) {
-        return new double[] {
-            2 * p0[0] - p1[0],
-            2 * p0[1] - p1[1],
-            2 * p0[2] - p1[2]
-        };
-    }
-
-    /**
-     * Extrapolates a phantom point after the end of the curve.
-     */
-    private static double[] extrapolateEnd(double[] pn1, double[] pn) {
-        return new double[] {
-            2 * pn[0] - pn1[0],
-            2 * pn[1] - pn1[1],
-            2 * pn[2] - pn1[2]
-        };
     }
 }

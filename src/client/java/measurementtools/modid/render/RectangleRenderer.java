@@ -15,6 +15,8 @@ import org.joml.Matrix4f;
 import java.util.List;
 
 public class RectangleRenderer implements ShapeRenderer {
+    private static final int BUFFER_SIZE = 2048;
+    private BufferAllocator buffer;
 
     @Override
     public void render(Camera camera, Matrix4f viewMatrix, List<BlockPos> selection, RenderConfig config) {
@@ -32,7 +34,10 @@ public class RectangleRenderer implements ShapeRenderer {
         MatrixStack matrices = new MatrixStack();
         matrices.multiplyPositionMatrix(viewMatrix);
 
-        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(1024));
+        if (buffer == null) {
+            buffer = new BufferAllocator(BUFFER_SIZE);
+        }
+        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(buffer);
         VertexConsumer lines = immediate.getBuffer(RenderLayer.getLines());
 
         // Calculate box corners relative to camera

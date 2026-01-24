@@ -2,10 +2,12 @@ package measurementtools.modid;
 
 import measurementtools.modid.shapes.EllipsoidMode;
 import measurementtools.modid.shapes.ShapeMode;
+import measurementtools.modid.util.SplineMath;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 
 import java.util.HashMap;
@@ -211,54 +213,45 @@ public class BlockCounter {
         }
     }
 
+    private static final int SPLINE_SAMPLES_PER_SEGMENT = 32;
+    private static final int DISTANCE_SAMPLES_PER_SEGMENT = 16;
+
     private void countSpline(World world, SelectionManager manager, Map<Block, Integer> counts) {
         java.util.List<BlockPos> selection = manager.getSelectedBlocks();
         if (selection.size() < 2) return;
 
         int tubeRadius = manager.getSplineRadius();
         if (tubeRadius == 0) {
-            // No volume - just count blocks along the spline path
-            countSplinePath(world, manager, counts);
+            countSplinePath(world, selection, counts);
             return;
         }
 
-        // Convert to double arrays for spline math
-        double[][] points = new double[selection.size()][3];
-        for (int i = 0; i < selection.size(); i++) {
-            BlockPos pos = selection.get(i);
-            points[i][0] = pos.getX() + 0.5;
-            points[i][1] = pos.getY() + 0.5;
-            points[i][2] = pos.getZ() + 0.5;
-        }
-
-        // Collect all unique blocks inside the tube
+        Vec3d[] points = SplineMath.blockPosListToVec3d(selection);
         java.util.Set<BlockPos> tubeBlocks = new java.util.HashSet<>();
         int n = points.length;
-        int samplesPerSegment = 32;
 
         for (int i = 0; i < n - 1; i++) {
-            double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
-            double[] p1 = points[i];
-            double[] p2 = points[i + 1];
-            double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+            Vec3d p0 = (i == 0) ? SplineMath.extrapolateStart(points[0], points[1]) : points[i - 1];
+            Vec3d p1 = points[i];
+            Vec3d p2 = points[i + 1];
+            Vec3d p3 = (i == n - 2) ? SplineMath.extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
 
-            for (int seg = 0; seg <= samplesPerSegment; seg++) {
-                double t = (double) seg / samplesPerSegment;
-                double[] center = catmullRom(p0, p1, p2, p3, t);
+            for (int seg = 0; seg <= SPLINE_SAMPLES_PER_SEGMENT; seg++) {
+                double t = (double) seg / SPLINE_SAMPLES_PER_SEGMENT;
+                Vec3d center = SplineMath.catmullRom(p0, p1, p2, p3, t);
 
-                // Sample blocks in a sphere around each spline point
                 for (int dx = -tubeRadius; dx <= tubeRadius; dx++) {
                     for (int dy = -tubeRadius; dy <= tubeRadius; dy++) {
                         for (int dz = -tubeRadius; dz <= tubeRadius; dz++) {
-                            int blockX = (int) Math.floor(center[0]) + dx;
-                            int blockY = (int) Math.floor(center[1]) + dy;
-                            int blockZ = (int) Math.floor(center[2]) + dz;
+                            int blockX = (int) Math.floor(center.x) + dx;
+                            int blockY = (int) Math.floor(center.y) + dy;
+                            int blockZ = (int) Math.floor(center.z) + dz;
 
                             BlockPos blockPos = new BlockPos(blockX, blockY, blockZ);
                             if (tubeBlocks.contains(blockPos)) continue;
 
-                            // Check distance from block center to spline
-                            double minDist = getMinDistanceToSpline(blockX + 0.5, blockY + 0.5, blockZ + 0.5, points);
+                            Vec3d blockCenter = new Vec3d(blockX + 0.5, blockY + 0.5, blockZ + 0.5);
+                            double minDist = SplineMath.getMinDistanceToSpline(blockCenter, points, DISTANCE_SAMPLES_PER_SEGMENT);
                             if (minDist <= tubeRadius + 0.5) {
                                 tubeBlocks.add(blockPos);
                             }
@@ -268,42 +261,31 @@ public class BlockCounter {
             }
         }
 
-        // Count all blocks inside the tube
         for (BlockPos pos : tubeBlocks) {
             addBlockToCount(world, pos, counts);
         }
     }
 
-    private void countSplinePath(World world, SelectionManager manager, Map<Block, Integer> counts) {
-        // Count blocks along the spline path (no radius)
-        java.util.List<BlockPos> selection = manager.getSelectedBlocks();
+    private void countSplinePath(World world, java.util.List<BlockPos> selection, Map<Block, Integer> counts) {
         if (selection.size() < 2) return;
 
-        double[][] points = new double[selection.size()][3];
-        for (int i = 0; i < selection.size(); i++) {
-            BlockPos pos = selection.get(i);
-            points[i][0] = pos.getX() + 0.5;
-            points[i][1] = pos.getY() + 0.5;
-            points[i][2] = pos.getZ() + 0.5;
-        }
-
+        Vec3d[] points = SplineMath.blockPosListToVec3d(selection);
         java.util.Set<BlockPos> pathBlocks = new java.util.HashSet<>();
         int n = points.length;
-        int samplesPerSegment = 32;
 
         for (int i = 0; i < n - 1; i++) {
-            double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
-            double[] p1 = points[i];
-            double[] p2 = points[i + 1];
-            double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
+            Vec3d p0 = (i == 0) ? SplineMath.extrapolateStart(points[0], points[1]) : points[i - 1];
+            Vec3d p1 = points[i];
+            Vec3d p2 = points[i + 1];
+            Vec3d p3 = (i == n - 2) ? SplineMath.extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
 
-            for (int seg = 0; seg <= samplesPerSegment; seg++) {
-                double t = (double) seg / samplesPerSegment;
-                double[] point = catmullRom(p0, p1, p2, p3, t);
+            for (int seg = 0; seg <= SPLINE_SAMPLES_PER_SEGMENT; seg++) {
+                double t = (double) seg / SPLINE_SAMPLES_PER_SEGMENT;
+                Vec3d point = SplineMath.catmullRom(p0, p1, p2, p3, t);
 
-                int blockX = (int) Math.floor(point[0]);
-                int blockY = (int) Math.floor(point[1]);
-                int blockZ = (int) Math.floor(point[2]);
+                int blockX = (int) Math.floor(point.x);
+                int blockY = (int) Math.floor(point.y);
+                int blockZ = (int) Math.floor(point.z);
 
                 pathBlocks.add(new BlockPos(blockX, blockY, blockZ));
             }
@@ -312,65 +294,6 @@ public class BlockCounter {
         for (BlockPos pos : pathBlocks) {
             addBlockToCount(world, pos, counts);
         }
-    }
-
-    private double getMinDistanceToSpline(double px, double py, double pz, double[][] points) {
-        double minDist = Double.MAX_VALUE;
-        int n = points.length;
-        int samplesPerSegment = 16;
-
-        for (int i = 0; i < n - 1; i++) {
-            double[] p0 = (i == 0) ? extrapolateStart(points[0], points[1]) : points[i - 1];
-            double[] p1 = points[i];
-            double[] p2 = points[i + 1];
-            double[] p3 = (i == n - 2) ? extrapolateEnd(points[n - 2], points[n - 1]) : points[i + 2];
-
-            for (int seg = 0; seg <= samplesPerSegment; seg++) {
-                double t = (double) seg / samplesPerSegment;
-                double[] splinePoint = catmullRom(p0, p1, p2, p3, t);
-
-                double dx = px - splinePoint[0];
-                double dy = py - splinePoint[1];
-                double dz = pz - splinePoint[2];
-                double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-                if (dist < minDist) {
-                    minDist = dist;
-                }
-            }
-        }
-
-        return minDist;
-    }
-
-    private double[] catmullRom(double[] p0, double[] p1, double[] p2, double[] p3, double t) {
-        double t2 = t * t;
-        double t3 = t2 * t;
-
-        double[] result = new double[3];
-        for (int i = 0; i < 3; i++) {
-            result[i] = 0.5 * ((2 * p1[i]) +
-                              (-p0[i] + p2[i]) * t +
-                              (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t2 +
-                              (-p0[i] + 3 * p1[i] - 3 * p2[i] + p3[i]) * t3);
-        }
-        return result;
-    }
-
-    private double[] extrapolateStart(double[] p0, double[] p1) {
-        return new double[] {
-            2 * p0[0] - p1[0],
-            2 * p0[1] - p1[1],
-            2 * p0[2] - p1[2]
-        };
-    }
-
-    private double[] extrapolateEnd(double[] pn1, double[] pn) {
-        return new double[] {
-            2 * pn[0] - pn1[0],
-            2 * pn[1] - pn1[1],
-            2 * pn[2] - pn1[2]
-        };
     }
 
     private void addBlockToCount(World world, BlockPos pos, Map<Block, Integer> counts) {

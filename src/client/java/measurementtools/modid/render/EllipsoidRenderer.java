@@ -17,6 +17,8 @@ import java.util.List;
 public class EllipsoidRenderer implements ShapeRenderer {
     private static final int LAT_SEGMENTS = 12;
     private static final int LONG_SEGMENTS = 24;
+    private static final int BUFFER_SIZE = 8192;
+    private BufferAllocator buffer;
 
     @Override
     public void render(Camera camera, Matrix4f viewMatrix, List<BlockPos> selection, RenderConfig config) {
@@ -67,7 +69,10 @@ public class EllipsoidRenderer implements ShapeRenderer {
         matrices.multiplyPositionMatrix(viewMatrix);
         Vec3d cameraPos = camera.getPos();
 
-        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(2048));
+        if (buffer == null) {
+            buffer = new BufferAllocator(BUFFER_SIZE);
+        }
+        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(buffer);
         VertexConsumer lines = immediate.getBuffer(RenderLayer.getLines());
 
         matrices.push();

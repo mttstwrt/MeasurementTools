@@ -11,11 +11,12 @@ import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 
 public class SubdivisionRenderer {
-
-    // Subdivision line color (yellow)
     private static final float SUB_R = 1.0f;
     private static final float SUB_G = 1.0f;
     private static final float SUB_B = 0.3f;
+    private static final int BUFFER_SIZE = 4096;
+
+    private BufferAllocator buffer;
 
     public void renderSubdivisions(Camera camera, Matrix4f viewMatrix, Box bounds, int subdivisions, float alpha) {
         if (subdivisions <= 1) return;
@@ -25,7 +26,10 @@ public class SubdivisionRenderer {
         MatrixStack matrices = new MatrixStack();
         matrices.multiplyPositionMatrix(viewMatrix);
 
-        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(1024));
+        if (buffer == null) {
+            buffer = new BufferAllocator(BUFFER_SIZE);
+        }
+        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(buffer);
         VertexConsumer lines = immediate.getBuffer(RenderLayer.getLines());
 
         // Translate bounds relative to camera

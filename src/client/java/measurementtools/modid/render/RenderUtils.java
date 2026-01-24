@@ -10,6 +10,8 @@ import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 
 public class RenderUtils {
+    private static final int LABEL_BUFFER_SIZE = 1024;
+    private static BufferAllocator labelBuffer;
 
     public static void drawLine(Matrix4f matrix, VertexConsumer lines,
                                 float x1, float y1, float z1,
@@ -68,8 +70,10 @@ public class RenderUtils {
         scale = Math.min(scale, 0.08f);
         matrices.scale(-scale, -scale, scale);
 
-        // Draw text with background
-        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(256));
+        if (labelBuffer == null) {
+            labelBuffer = new BufferAllocator(LABEL_BUFFER_SIZE);
+        }
+        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(labelBuffer);
 
         int textWidth = textRenderer.getWidth(text);
         textRenderer.draw(
@@ -96,24 +100,22 @@ public class RenderUtils {
         MinecraftClient client = MinecraftClient.getInstance();
         TextRenderer textRenderer = client.textRenderer;
 
-        // Use the existing matrix transformation and add the local offset
         MatrixStack matrices = new MatrixStack();
         matrices.multiplyPositionMatrix(existingMatrices.peek().getPositionMatrix());
         matrices.translate(localX, localY, localZ);
 
-        // Billboard - face the camera
         matrices.multiply(camera.getRotation());
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180));
 
-        // Calculate approximate distance for scaling
-        Vec3d cameraPos = camera.getPos();
-        double distance = 10.0; // Default distance for relative labels
+        double distance = 10.0;
         float scale = (float) Math.max(0.02f, 0.015f + 0.002f * distance);
         scale = Math.min(scale, 0.08f);
         matrices.scale(-scale, -scale, scale);
 
-        // Draw text with background
-        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(256));
+        if (labelBuffer == null) {
+            labelBuffer = new BufferAllocator(LABEL_BUFFER_SIZE);
+        }
+        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(labelBuffer);
 
         int textWidth = textRenderer.getWidth(text);
         textRenderer.draw(

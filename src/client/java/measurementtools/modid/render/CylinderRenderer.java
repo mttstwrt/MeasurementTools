@@ -15,6 +15,8 @@ import java.util.List;
 
 public class CylinderRenderer implements ShapeRenderer {
     private static final int CIRCLE_SEGMENTS = 32;
+    private static final int BUFFER_SIZE = 4096;
+    private BufferAllocator buffer;
 
     @Override
     public void render(Camera camera, Matrix4f viewMatrix, List<BlockPos> selection, RenderConfig config) {
@@ -35,7 +37,10 @@ public class CylinderRenderer implements ShapeRenderer {
         matrices.multiplyPositionMatrix(viewMatrix);
         Vec3d cameraPos = camera.getPos();
 
-        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(new BufferAllocator(1024));
+        if (buffer == null) {
+            buffer = new BufferAllocator(BUFFER_SIZE);
+        }
+        VertexConsumerProvider.Immediate immediate = VertexConsumerProvider.immediate(buffer);
         VertexConsumer lines = immediate.getBuffer(RenderLayer.getLines());
 
         matrices.push();
