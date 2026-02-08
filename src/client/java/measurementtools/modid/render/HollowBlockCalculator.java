@@ -31,6 +31,7 @@ public class HollowBlockCalculator {
             case CYLINDER -> calculateCylinderHollow(manager, filterLayer);
             case ELLIPSOID -> calculateEllipsoidHollow(manager, filterLayer);
             case SPLINE -> calculateSplineHollow(manager, filterLayer);
+            case LINE -> calculateLineHollow(manager, filterLayer);
         };
     }
 
@@ -199,6 +200,150 @@ public class HollowBlockCalculator {
         }
 
         return blocks;
+    }
+
+    private static final int LINE_SAMPLES_PER_BLOCK = 2;
+
+    /**
+     * Calculates all blocks that straight lines between points pass through.
+     * If tube radius > 0, calculates blocks forming a tube around the lines.
+     */
+    private static Set<BlockPos> calculateLineHollow(SelectionManager manager, int filterLayer) {
+        Set<BlockPos> blocks = new HashSet<>();
+
+        java.util.List<BlockPos> selection = manager.getSelectedBlocks();
+        if (selection.size() < 2) return blocks;
+
+        int tubeRadius = manager.getSplineRadius();
+
+        if (tubeRadius == 0) {
+            // No radius - just collect blocks along the center lines
+            for (int i = 0; i < selection.size() - 1; i++) {
+                BlockPos from = selection.get(i);
+                BlockPos to = selection.get(i + 1);
+                traceLineBlocks(from, to, blocks, filterLayer);
+            }
+        } else {
+            // With radius - collect all blocks inside the tube, then filter to surface
+            Set<BlockPos> allTubeBlocks = new HashSet<>();
+
+            for (int i = 0; i < selection.size() - 1; i++) {
+                BlockPos from = selection.get(i);
+                BlockPos to = selection.get(i + 1);
+
+                Vec3d start = new Vec3d(from.getX() + 0.5, from.getY() + 0.5, from.getZ() + 0.5);
+                Vec3d end = new Vec3d(to.getX() + 0.5, to.getY() + 0.5, to.getZ() + 0.5);
+                Vec3d direction = end.subtract(start).normalize();
+                double segmentLength = start.distanceTo(end);
+
+                int samples = Math.max(1, (int) Math.ceil(segmentLength * LINE_SAMPLES_PER_BLOCK));
+
+                for (int s = 0; s <= samples; s++) {
+                    double t = (double) s / samples;
+                    Vec3d center = start.add(end.subtract(start).multiply(t));
+
+                    // Sample blocks in a volume around each line point
+                    for (int dx = -tubeRadius; dx <= tubeRadius; dx++) {
+                        for (int dy = -tubeRadius; dy <= tubeRadius; dy++) {
+                            for (int dz = -tubeRadius; dz <= tubeRadius; dz++) {
+                                int blockX = (int) Math.floor(center.x) + dx;
+                                int blockY = (int) Math.floor(center.y) + dy;
+                                int blockZ = (int) Math.floor(center.z) + dz;
+
+                                Vec3d blockCenter = new Vec3d(blockX + 0.5, blockY + 0.5, blockZ + 0.5);
+                                Vec3d toBlock = blockCenter.subtract(center);
+
+                                // Distance along direction (we only care about perpendicular distance)
+                                double alongDir = toBlock.dotProduct(direction);
+                                Vec3d perpComponent = toBlock.subtract(direction.multiply(alongDir));
+                                double perpDist = perpComponent.length();
+
+                                if (perpDist <= tubeRadius + 0.5) {
+                                    allTubeBlocks.add(new BlockPos(blockX, blockY, blockZ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Filter to surface blocks only (hollow mode)
+            for (BlockPos pos : allTubeBlocks) {
+                if (filterLayer != -1 && pos.getY() != filterLayer) continue;
+
+                Vec3d blockCenter = new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+                double minDist = getMinDistanceToLineSegments(blockCenter, selection);
+
+                // Block is on surface if it's near the outer edge of the tube
+                if (minDist >= tubeRadius - 0.5) {
+                    blocks.add(pos);
+                }
+            }
+        }
+
+        return blocks;
+    }
+
+    /**
+     * Gets the minimum distance from a point to any of the line segments.
+     */
+    private static double getMinDistanceToLineSegments(Vec3d point, java.util.List<BlockPos> selection) {
+        double minDist = Double.MAX_VALUE;
+
+        for (int i = 0; i < selection.size() - 1; i++) {
+            BlockPos from = selection.get(i);
+            BlockPos to = selection.get(i + 1);
+
+            Vec3d start = new Vec3d(from.getX() + 0.5, from.getY() + 0.5, from.getZ() + 0.5);
+            Vec3d end = new Vec3d(to.getX() + 0.5, to.getY() + 0.5, to.getZ() + 0.5);
+
+            double dist = pointToSegmentDistance(point, start, end);
+            if (dist < minDist) {
+                minDist = dist;
+            }
+        }
+
+        return minDist;
+    }
+
+    /**
+     * Calculates the distance from a point to a line segment.
+     */
+    private static double pointToSegmentDistance(Vec3d point, Vec3d segStart, Vec3d segEnd) {
+        Vec3d segment = segEnd.subtract(segStart);
+        Vec3d toPoint = point.subtract(segStart);
+
+        double segLengthSq = segment.lengthSquared();
+        if (segLengthSq < 0.0001) {
+            return point.distanceTo(segStart);
+        }
+
+        double t = Math.max(0, Math.min(1, toPoint.dotProduct(segment) / segLengthSq));
+        Vec3d projection = segStart.add(segment.multiply(t));
+        return point.distanceTo(projection);
+    }
+
+    /**
+     * Traces blocks along a straight line between two points.
+     */
+    private static void traceLineBlocks(BlockPos from, BlockPos to, Set<BlockPos> blocks, int filterLayer) {
+        Vec3d start = new Vec3d(from.getX() + 0.5, from.getY() + 0.5, from.getZ() + 0.5);
+        Vec3d end = new Vec3d(to.getX() + 0.5, to.getY() + 0.5, to.getZ() + 0.5);
+
+        double distance = start.distanceTo(end);
+        int samples = Math.max(1, (int) Math.ceil(distance * LINE_SAMPLES_PER_BLOCK));
+
+        for (int s = 0; s <= samples; s++) {
+            double t = (double) s / samples;
+            double x = start.x + (end.x - start.x) * t;
+            double y = start.y + (end.y - start.y) * t;
+            double z = start.z + (end.z - start.z) * t;
+
+            int blockY = (int) Math.floor(y);
+            if (filterLayer == -1 || blockY == filterLayer) {
+                blocks.add(new BlockPos((int) Math.floor(x), blockY, (int) Math.floor(z)));
+            }
+        }
     }
 
     private static final int SPLINE_SAMPLES_PER_SEGMENT = 32;

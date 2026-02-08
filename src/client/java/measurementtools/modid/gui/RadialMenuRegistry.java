@@ -254,6 +254,51 @@ public class RadialMenuRegistry {
             }
         });
 
+        // Line Mode (with radius scroll support)
+        register(new RadialMenuAction() {
+            @Override
+            public Text getName() {
+                SelectionManager manager = SelectionManager.getInstance();
+                if (manager.getShapeMode() == ShapeMode.LINE) {
+                    int radius = manager.getSplineRadius();
+                    if (radius == 0) {
+                        return Text.literal("Line");
+                    }
+                    return Text.literal("Line r=" + radius);
+                }
+                return Text.literal("Line");
+            }
+
+            @Override
+            public void execute() {
+                SelectionManager.getInstance().setShapeMode(ShapeMode.LINE);
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+
+            @Override
+            public int getColor() {
+                SelectionManager manager = SelectionManager.getInstance();
+                if (manager.getShapeMode() == ShapeMode.LINE) {
+                    return manager.getSplineRadius() > 0 ? 0xFFFF66 : 0x66FF66;
+                }
+                return 0xFFFFFF;
+            }
+
+            @Override
+            public boolean onScroll(double amount) {
+                if (amount > 0) {
+                    SelectionManager.getInstance().stepSplineRadiusUp();
+                } else if (amount < 0) {
+                    SelectionManager.getInstance().stepSplineRadiusDown();
+                }
+                return true;
+            }
+        });
+
         // Block Count Toggle
         register(new RadialMenuAction() {
             @Override

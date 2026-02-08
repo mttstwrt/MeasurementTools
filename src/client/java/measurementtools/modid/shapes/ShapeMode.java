@@ -7,7 +7,8 @@ public enum ShapeMode {
     RECTANGLE("rectangle", "measurementtools.shape.rectangle"),
     CYLINDER("cylinder", "measurementtools.shape.cylinder"),
     ELLIPSOID("ellipsoid", "measurementtools.shape.ellipsoid"),
-    SPLINE("spline", "measurementtools.shape.spline");
+    SPLINE("spline", "measurementtools.shape.spline"),
+    LINE("line", "measurementtools.shape.line");
 
     private final String id;
     private final String translationKey;

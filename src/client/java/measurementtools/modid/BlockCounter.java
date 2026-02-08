@@ -84,6 +84,7 @@ public class BlockCounter {
             case CYLINDER -> countCylinder(world, manager, counts);
             case ELLIPSOID -> countEllipsoid(world, manager, counts);
             case SPLINE -> countSpline(world, manager, counts);
+            case LINE -> countLine(world, manager, counts);
         }
 
         return counts;
@@ -293,6 +294,134 @@ public class BlockCounter {
 
         for (BlockPos pos : pathBlocks) {
             addBlockToCount(world, pos, counts);
+        }
+    }
+
+    private void countLine(World world, SelectionManager manager, Map<Block, Integer> counts) {
+        java.util.List<BlockPos> selection = manager.getSelectedBlocks();
+        if (selection.size() < 2) return;
+
+        int tubeRadius = manager.getSplineRadius();
+        if (tubeRadius == 0) {
+            countLinePath(world, selection, counts);
+            return;
+        }
+
+        // Count blocks inside the tube around the line segments
+        java.util.Set<BlockPos> tubeBlocks = new java.util.HashSet<>();
+
+        for (int i = 0; i < selection.size() - 1; i++) {
+            BlockPos from = selection.get(i);
+            BlockPos to = selection.get(i + 1);
+
+            Vec3d start = new Vec3d(from.getX() + 0.5, from.getY() + 0.5, from.getZ() + 0.5);
+            Vec3d end = new Vec3d(to.getX() + 0.5, to.getY() + 0.5, to.getZ() + 0.5);
+            Vec3d direction = end.subtract(start).normalize();
+            double segmentLength = start.distanceTo(end);
+
+            int samples = Math.max(1, (int) Math.ceil(segmentLength * 2));
+
+            for (int s = 0; s <= samples; s++) {
+                double t = (double) s / samples;
+                Vec3d center = start.add(end.subtract(start).multiply(t));
+
+                // Check all blocks within the tube radius
+                for (int dx = -tubeRadius; dx <= tubeRadius; dx++) {
+                    for (int dy = -tubeRadius; dy <= tubeRadius; dy++) {
+                        for (int dz = -tubeRadius; dz <= tubeRadius; dz++) {
+                            int blockX = (int) Math.floor(center.x) + dx;
+                            int blockY = (int) Math.floor(center.y) + dy;
+                            int blockZ = (int) Math.floor(center.z) + dz;
+
+                            BlockPos blockPos = new BlockPos(blockX, blockY, blockZ);
+                            if (tubeBlocks.contains(blockPos)) continue;
+
+                            Vec3d blockCenter = new Vec3d(blockX + 0.5, blockY + 0.5, blockZ + 0.5);
+                            double minDist = getMinDistanceToLineSegments(blockCenter, selection);
+                            if (minDist <= tubeRadius + 0.5) {
+                                tubeBlocks.add(blockPos);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (BlockPos pos : tubeBlocks) {
+            addBlockToCount(world, pos, counts);
+        }
+    }
+
+    private void countLinePath(World world, java.util.List<BlockPos> selection, Map<Block, Integer> counts) {
+        java.util.Set<BlockPos> lineBlocks = new java.util.HashSet<>();
+
+        for (int i = 0; i < selection.size() - 1; i++) {
+            BlockPos from = selection.get(i);
+            BlockPos to = selection.get(i + 1);
+            traceLineBlocks(from, to, lineBlocks);
+        }
+
+        for (BlockPos pos : lineBlocks) {
+            addBlockToCount(world, pos, counts);
+        }
+    }
+
+    /**
+     * Gets the minimum distance from a point to any of the line segments.
+     */
+    private double getMinDistanceToLineSegments(Vec3d point, java.util.List<BlockPos> selection) {
+        double minDist = Double.MAX_VALUE;
+
+        for (int i = 0; i < selection.size() - 1; i++) {
+            BlockPos from = selection.get(i);
+            BlockPos to = selection.get(i + 1);
+
+            Vec3d start = new Vec3d(from.getX() + 0.5, from.getY() + 0.5, from.getZ() + 0.5);
+            Vec3d end = new Vec3d(to.getX() + 0.5, to.getY() + 0.5, to.getZ() + 0.5);
+
+            double dist = pointToSegmentDistance(point, start, end);
+            if (dist < minDist) {
+                minDist = dist;
+            }
+        }
+
+        return minDist;
+    }
+
+    /**
+     * Calculates the distance from a point to a line segment.
+     */
+    private double pointToSegmentDistance(Vec3d point, Vec3d segStart, Vec3d segEnd) {
+        Vec3d segment = segEnd.subtract(segStart);
+        Vec3d toPoint = point.subtract(segStart);
+
+        double segLengthSq = segment.lengthSquared();
+        if (segLengthSq < 0.0001) {
+            return point.distanceTo(segStart);
+        }
+
+        double t = Math.max(0, Math.min(1, toPoint.dotProduct(segment) / segLengthSq));
+        Vec3d projection = segStart.add(segment.multiply(t));
+        return point.distanceTo(projection);
+    }
+
+    /**
+     * Traces blocks along a straight line between two points using 3D DDA algorithm.
+     */
+    private void traceLineBlocks(BlockPos from, BlockPos to, java.util.Set<BlockPos> blocks) {
+        Vec3d start = new Vec3d(from.getX() + 0.5, from.getY() + 0.5, from.getZ() + 0.5);
+        Vec3d end = new Vec3d(to.getX() + 0.5, to.getY() + 0.5, to.getZ() + 0.5);
+
+        double distance = start.distanceTo(end);
+        int samples = Math.max(1, (int) Math.ceil(distance * 2)); // 2 samples per block
+
+        for (int s = 0; s <= samples; s++) {
+            double t = (double) s / samples;
+            double x = start.x + (end.x - start.x) * t;
+            double y = start.y + (end.y - start.y) * t;
+            double z = start.z + (end.z - start.z) * t;
+
+            blocks.add(new BlockPos((int) Math.floor(x), (int) Math.floor(y), (int) Math.floor(z)));
         }
     }
 
