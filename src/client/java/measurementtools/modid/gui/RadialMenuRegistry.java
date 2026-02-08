@@ -348,6 +348,31 @@ public class RadialMenuRegistry {
             }
         });
 
+        // Chunk Boundaries Toggle
+        register(new RadialMenuAction() {
+            @Override
+            public Text getName() {
+                boolean enabled = SelectionManager.getInstance().isChunkBoundariesEnabled();
+                return Text.literal(enabled ? "Chunks: On" : "Chunks: Off");
+            }
+
+            @Override
+            public void execute() {
+                SelectionManager.getInstance().toggleChunkBoundaries();
+            }
+
+            @Override
+            public boolean isEnabled() {
+                return true;
+            }
+
+            @Override
+            public int getColor() {
+                return SelectionManager.getInstance().isChunkBoundariesEnabled()
+                    ? 0xFFFF66 : 0xFFFFFF;
+            }
+        });
+
         // Undo
         register(new RadialMenuAction() {
             @Override

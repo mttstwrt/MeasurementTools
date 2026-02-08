@@ -18,6 +18,7 @@ public class MeasurementRenderer {
     private final SubdivisionRenderer subdivisionRenderer = new SubdivisionRenderer();
     private final GhostBlockRenderer ghostBlockRenderer = new GhostBlockRenderer();
     private final HollowShapeRenderer hollowShapeRenderer = new HollowShapeRenderer();
+    private final ChunkBoundaryRenderer chunkBoundaryRenderer = new ChunkBoundaryRenderer();
 
     private MeasurementRenderer() {
         renderers.put(ShapeMode.RECTANGLE, new RectangleRenderer());
@@ -79,6 +80,11 @@ public class MeasurementRenderer {
 
         // Render ghost blocks (paste preview and locked placements) - always render
         ghostBlockRenderer.render(camera, viewMatrix);
+
+        // Render chunk boundaries if enabled
+        if (manager.isChunkBoundariesEnabled()) {
+            chunkBoundaryRenderer.render(camera, viewMatrix);
+        }
     }
 
     /**

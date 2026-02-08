@@ -18,6 +18,7 @@ public class SelectionManager {
     private int splineRadius = 0;
     private boolean blockCountingEnabled = false;
     private boolean hollowMode = false;
+    private boolean chunkBoundariesEnabled = false;
 
     // Layer mode state
     private boolean layerModeEnabled = false;
@@ -238,6 +239,18 @@ public class SelectionManager {
 
     public void toggleHollowMode() {
         this.hollowMode = !this.hollowMode;
+    }
+
+    public boolean isChunkBoundariesEnabled() {
+        return chunkBoundariesEnabled;
+    }
+
+    public void setChunkBoundariesEnabled(boolean enabled) {
+        this.chunkBoundariesEnabled = enabled;
+    }
+
+    public void toggleChunkBoundaries() {
+        this.chunkBoundariesEnabled = !this.chunkBoundariesEnabled;
     }
 
     public boolean isLayerModeEnabled() {
