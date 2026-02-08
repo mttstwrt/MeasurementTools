@@ -49,6 +49,12 @@ public class MeasurementRenderer {
             if (manager.isHollowMode()) {
                 // Render hollow shape (individual block outlines)
                 hollowShapeRenderer.render(camera, viewMatrix, mode, config);
+
+                // Also render the shape-specific labels from the underlying renderer
+                ShapeRenderer renderer = renderers.get(mode);
+                if (renderer != null) {
+                    renderer.renderLabels(camera, viewMatrix, selection, config);
+                }
             } else {
                 // Render normal wireframe shape
                 ShapeRenderer renderer = renderers.get(mode);

@@ -107,18 +107,82 @@ public class EllipsoidRenderer implements ShapeRenderer {
 
         // Draw labels
         if (config.showLabels()) {
-            RenderUtils.drawLabel(camera, viewMatrix, matrices, radiusX + 0.5, 0, 0,
-                String.format("rx=%.1f", radiusX));
-            RenderUtils.drawLabel(camera, viewMatrix, matrices, 0, radiusY + 0.5, 0,
-                String.format("ry=%.1f", radiusY));
-            if (Math.abs(radiusX - radiusZ) > 0.1) {
-                RenderUtils.drawLabel(camera, viewMatrix, matrices, 0, 0, radiusZ + 0.5,
-                    String.format("rz=%.1f", radiusZ));
-            }
+            drawLabels(camera, viewMatrix, matrices, radiusX, radiusY, radiusZ);
         }
 
         matrices.pop();
         immediate.draw();
+    }
+
+    @Override
+    public void renderLabels(Camera camera, Matrix4f viewMatrix, List<BlockPos> selection, RenderConfig config) {
+        if (selection.isEmpty() || !config.showLabels()) return;
+
+        SelectionManager manager = SelectionManager.getInstance();
+
+        double centerX, centerY, centerZ;
+        double radiusX, radiusY, radiusZ;
+
+        if (manager.getEllipsoidMode() == EllipsoidMode.FIT_TO_BOX) {
+            BlockPos minPos = manager.getMinPos();
+            BlockPos maxPos = manager.getMaxPos();
+            if (minPos == null || maxPos == null) return;
+
+            centerX = (minPos.getX() + maxPos.getX() + 1) / 2.0;
+            centerY = (minPos.getY() + maxPos.getY() + 1) / 2.0;
+            centerZ = (minPos.getZ() + maxPos.getZ() + 1) / 2.0;
+
+            radiusX = (maxPos.getX() - minPos.getX() + 1) / 2.0;
+            radiusY = (maxPos.getY() - minPos.getY() + 1) / 2.0;
+            radiusZ = (maxPos.getZ() - minPos.getZ() + 1) / 2.0;
+        } else {
+            BlockPos center = manager.getCenterBlock();
+            if (center == null) return;
+
+            centerX = center.getX() + 0.5;
+            centerZ = center.getZ() + 0.5;
+
+            double radiusXZ = manager.getMaxRadiusXZ();
+            if (radiusXZ < 0.5) radiusXZ = 0.5;
+            radiusX = radiusXZ;
+            radiusZ = radiusXZ;
+
+            int minY = manager.getMinY();
+            int maxY = manager.getMaxY();
+            radiusY = (maxY - minY + 1) / 2.0;
+            centerY = (minY + maxY + 1) / 2.0;
+        }
+
+        if (radiusX < 0.5) radiusX = 0.5;
+        if (radiusY < 0.5) radiusY = 0.5;
+        if (radiusZ < 0.5) radiusZ = 0.5;
+
+        MatrixStack matrices = new MatrixStack();
+        matrices.multiplyPositionMatrix(viewMatrix);
+        Vec3d cameraPos = camera.getPos();
+
+        matrices.push();
+        matrices.translate(
+            centerX - cameraPos.x,
+            centerY - cameraPos.y,
+            centerZ - cameraPos.z
+        );
+
+        drawLabels(camera, viewMatrix, matrices, radiusX, radiusY, radiusZ);
+
+        matrices.pop();
+    }
+
+    private void drawLabels(Camera camera, Matrix4f viewMatrix, MatrixStack matrices,
+                            double radiusX, double radiusY, double radiusZ) {
+        RenderUtils.drawLabel(camera, viewMatrix, matrices, radiusX + 0.5, 0, 0,
+            String.format("rx=%.1f", radiusX));
+        RenderUtils.drawLabel(camera, viewMatrix, matrices, 0, radiusY + 0.5, 0,
+            String.format("ry=%.1f", radiusY));
+        if (Math.abs(radiusX - radiusZ) > 0.1) {
+            RenderUtils.drawLabel(camera, viewMatrix, matrices, 0, 0, radiusZ + 0.5,
+                String.format("rz=%.1f", radiusZ));
+        }
     }
 
     private void drawEllipseXZ(Matrix4f matrix, VertexConsumer lines,

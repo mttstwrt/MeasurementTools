@@ -75,6 +75,20 @@ public class RectangleRenderer implements ShapeRenderer {
         immediate.draw();
 
         // Draw dimension labels
+        if (config.showLabels()) {
+            drawLabels(camera, viewMatrix, minPos, maxPos);
+        }
+    }
+
+    @Override
+    public void renderLabels(Camera camera, Matrix4f viewMatrix, List<BlockPos> selection, RenderConfig config) {
+        if (selection.isEmpty() || !config.showLabels()) return;
+
+        SelectionManager manager = SelectionManager.getInstance();
+        BlockPos minPos = manager.getMinPos();
+        BlockPos maxPos = manager.getMaxPos();
+        if (minPos == null || maxPos == null) return;
+
         drawLabels(camera, viewMatrix, minPos, maxPos);
     }
 

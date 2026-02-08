@@ -73,21 +73,38 @@ public class SplineRenderer implements ShapeRenderer {
 
         // Draw total length label
         if (config.showLabels() && points.length >= 2) {
-            double totalLength = SplineMath.calculateSplineLength(points, SEGMENTS_PER_SPAN);
-            Vec3d midPoint = SplineMath.getSplinePoint(points, 0.5);
-
-            matrices.push();
-            matrices.translate(
-                midPoint.x - cameraPos.x,
-                midPoint.y - cameraPos.y + 0.5,
-                midPoint.z - cameraPos.z
-            );
-            RenderUtils.drawLabel(camera, viewMatrix, matrices, 0, 0, 0,
-                String.format("len=%.1f", totalLength));
-            matrices.pop();
+            drawLabels(camera, viewMatrix, matrices, points, cameraPos);
         }
 
         immediate.draw();
+    }
+
+    @Override
+    public void renderLabels(Camera camera, Matrix4f viewMatrix, List<BlockPos> selection, RenderConfig config) {
+        if (selection.size() < 2 || !config.showLabels()) return;
+
+        MatrixStack matrices = new MatrixStack();
+        matrices.multiplyPositionMatrix(viewMatrix);
+        Vec3d cameraPos = camera.getPos();
+
+        Vec3d[] points = SplineMath.blockPosListToVec3d(selection);
+
+        drawLabels(camera, viewMatrix, matrices, points, cameraPos);
+    }
+
+    private void drawLabels(Camera camera, Matrix4f viewMatrix, MatrixStack matrices, Vec3d[] points, Vec3d cameraPos) {
+        double totalLength = SplineMath.calculateSplineLength(points, SEGMENTS_PER_SPAN);
+        Vec3d midPoint = SplineMath.getSplinePoint(points, 0.5);
+
+        matrices.push();
+        matrices.translate(
+            midPoint.x - cameraPos.x,
+            midPoint.y - cameraPos.y + 0.5,
+            midPoint.z - cameraPos.z
+        );
+        RenderUtils.drawLabel(camera, viewMatrix, matrices, 0, 0, 0,
+            String.format("len=%.1f", totalLength));
+        matrices.pop();
     }
 
     /**

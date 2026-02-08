@@ -9,6 +9,14 @@ import java.util.List;
 public interface ShapeRenderer {
     void render(Camera camera, Matrix4f viewMatrix, List<BlockPos> selection, RenderConfig config);
 
+    /**
+     * Renders only the labels for this shape, without the wireframe.
+     * Used when hollow mode is enabled to show shape-specific measurements.
+     */
+    default void renderLabels(Camera camera, Matrix4f viewMatrix, List<BlockPos> selection, RenderConfig config) {
+        // Default implementation does nothing - subclasses override as needed
+    }
+
     record RenderConfig(
         float red,
         float green,
