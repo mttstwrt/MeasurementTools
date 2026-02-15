@@ -16,6 +16,7 @@ public class SelectionManager {
     private EllipsoidMode ellipsoidMode = EllipsoidMode.FIT_TO_BOX;
     private int subdivisionCount = 0;
     private int splineRadius = 0;
+    private int cylinderRadiusOffset = 0; // In half-block increments (1 = +0.5 blocks)
     private boolean blockCountingEnabled = false;
     private boolean hollowMode = false;
     private boolean chunkBoundariesEnabled = false;
@@ -176,6 +177,40 @@ public class SelectionManager {
     public void stepSplineRadiusDown() {
         if (splineRadius > 0) {
             splineRadius--;
+        }
+    }
+
+    // Cylinder radius offset in half-block increments (0 to 256 = 0 to 128 blocks)
+    private static final int MAX_CYLINDER_OFFSET = 256; // 128 blocks max
+
+    /**
+     * Gets the cylinder radius offset in half-block increments.
+     * 1 = +0.5 blocks, 2 = +1.0 blocks, etc.
+     */
+    public int getCylinderRadiusOffset() {
+        return cylinderRadiusOffset;
+    }
+
+    /**
+     * Gets the cylinder radius offset as a double (in blocks).
+     */
+    public double getCylinderRadiusOffsetBlocks() {
+        return cylinderRadiusOffset * 0.5;
+    }
+
+    public void setCylinderRadiusOffset(int offset) {
+        this.cylinderRadiusOffset = Math.max(0, Math.min(MAX_CYLINDER_OFFSET, offset));
+    }
+
+    public void stepCylinderRadiusUp() {
+        if (cylinderRadiusOffset < MAX_CYLINDER_OFFSET) {
+            cylinderRadiusOffset++;
+        }
+    }
+
+    public void stepCylinderRadiusDown() {
+        if (cylinderRadiusOffset > 0) {
+            cylinderRadiusOffset--;
         }
     }
 

@@ -26,7 +26,7 @@ public class CylinderRenderer implements ShapeRenderer {
         BlockPos center = manager.getCenterBlock();
         if (center == null) return;
 
-        double radius = manager.getMaxRadiusXZ();
+        double radius = manager.getMaxRadiusXZ() + manager.getCylinderRadiusOffsetBlocks();
         if (radius < 0.5) radius = 0.5;
 
         int minY = manager.getMinY();
@@ -87,7 +87,7 @@ public class CylinderRenderer implements ShapeRenderer {
         BlockPos center = manager.getCenterBlock();
         if (center == null) return;
 
-        double radius = manager.getMaxRadiusXZ();
+        double radius = manager.getMaxRadiusXZ() + manager.getCylinderRadiusOffsetBlocks();
         if (radius < 0.5) radius = 0.5;
 
         int minY = manager.getMinY();

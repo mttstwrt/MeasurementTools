@@ -44,6 +44,10 @@ public class HollowShapeRenderer {
     // Cached render config for detecting color changes
     private float cachedRed, cachedGreen, cachedBlue, cachedAlpha;
 
+    // Cached limit status from last calculation
+    private boolean wasLimited = false;
+    private String limitReason = null;
+
     /**
      * Renders the hollow shape using individual block outlines.
      * Uses cached vertex data for improved performance.
@@ -60,6 +64,23 @@ public class HollowShapeRenderer {
 
         // Get the hollow blocks (with caching) - this also marks lines cache dirty if blocks changed
         Set<BlockPos> hollowBlocks = getHollowBlocks(mode, filterLayer, manager);
+
+        // Check if calculation was limited (even if blocks is empty due to early exit)
+        wasLimited = HollowBlockCalculator.wasLastCalculationLimited();
+        limitReason = HollowBlockCalculator.getLastLimitReason();
+
+        // Show warning label if limited
+        if (wasLimited && limitReason != null) {
+            BlockPos minPos = manager.getMinPos();
+            BlockPos maxPos = manager.getMaxPos();
+            if (minPos != null && maxPos != null) {
+                double centerX = (minPos.getX() + maxPos.getX() + 1) / 2.0;
+                double centerY = maxPos.getY() + 2.5;
+                double centerZ = (minPos.getZ() + maxPos.getZ() + 1) / 2.0;
+                RenderUtils.drawWorldLabel(camera, viewMatrix, centerX, centerY, centerZ, limitReason);
+            }
+        }
+
         if (hollowBlocks.isEmpty()) return;
 
         float r = config.red();
@@ -222,6 +243,7 @@ public class HollowShapeRenderer {
         hash = 31 * hash + manager.getSelectedBlocks().size();
         hash = 31 * hash + (manager.getEllipsoidMode() != null ? manager.getEllipsoidMode().hashCode() : 0);
         hash = 31 * hash + manager.getSplineRadius();
+        hash = 31 * hash + manager.getCylinderRadiusOffset();
         return hash;
     }
 

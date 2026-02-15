@@ -161,10 +161,20 @@ public class RadialMenuRegistry {
             }
         });
 
-        // Cylinder Mode
+        // Cylinder Mode (with radius offset scroll support)
         register(new RadialMenuAction() {
             @Override
             public Text getName() {
+                SelectionManager manager = SelectionManager.getInstance();
+                if (manager.getShapeMode() == ShapeMode.CYLINDER) {
+                    int offset = manager.getCylinderRadiusOffset();
+                    if (offset == 0) {
+                        return Text.literal("Cylinder");
+                    }
+                    // Display offset as +X.X blocks
+                    double offsetBlocks = offset * 0.5;
+                    return Text.literal("Cylinder +" + String.format("%.1f", offsetBlocks));
+                }
                 return Text.literal("Cylinder");
             }
 
@@ -180,8 +190,21 @@ public class RadialMenuRegistry {
 
             @Override
             public int getColor() {
-                return SelectionManager.getInstance().getShapeMode() == ShapeMode.CYLINDER
-                    ? 0x66FF66 : 0xFFFFFF;
+                SelectionManager manager = SelectionManager.getInstance();
+                if (manager.getShapeMode() == ShapeMode.CYLINDER) {
+                    return manager.getCylinderRadiusOffset() != 0 ? 0xFFFF66 : 0x66FF66;
+                }
+                return 0xFFFFFF;
+            }
+
+            @Override
+            public boolean onScroll(double amount) {
+                if (amount > 0) {
+                    SelectionManager.getInstance().stepCylinderRadiusUp();
+                } else if (amount < 0) {
+                    SelectionManager.getInstance().stepCylinderRadiusDown();
+                }
+                return true;
             }
         });
 

@@ -16,11 +16,40 @@ import java.util.Set;
  */
 public class HollowBlockCalculator {
 
+    /** Maximum number of hollow blocks to render (prevents OOM and lag) */
+    public static final int MAX_HOLLOW_BLOCKS = 50_000;
+
+    /** Maximum volume to attempt calculation (prevents hang on huge selections) */
+    public static final long MAX_VOLUME = 10_000_000L;
+
+    /** Whether the last calculation was limited due to size constraints */
+    private static boolean lastCalculationLimited = false;
+
+    /** Reason for the last calculation being limited, or null if not limited */
+    private static String lastLimitReason = null;
+
+    /**
+     * Returns true if the last calculation was limited due to size constraints.
+     */
+    public static boolean wasLastCalculationLimited() {
+        return lastCalculationLimited;
+    }
+
+    /**
+     * Returns the reason for the last limitation, or null if not limited.
+     */
+    public static String getLastLimitReason() {
+        return lastLimitReason;
+    }
+
     /**
      * Gets the blocks that form the surface of the current shape.
      * @param filterLayer if not -1, only returns blocks at this absolute Y level
      */
     public static Set<BlockPos> calculateHollowBlocks(ShapeMode mode, int filterLayer) {
+        // Reset limit tracking
+        lastCalculationLimited = false;
+        lastLimitReason = null;
         SelectionManager manager = SelectionManager.getInstance();
         if (!manager.hasSelection()) {
             return Set.of();
@@ -52,6 +81,20 @@ public class HollowBlockCalculator {
         int maxY = maxPos.getY();
         int maxZ = maxPos.getZ();
 
+        int sizeX = maxX - minX + 1;
+        int sizeY = maxY - minY + 1;
+        int sizeZ = maxZ - minZ + 1;
+
+        // Early check: estimate surface area for rectangles
+        // Surface = 2*(xy + xz + yz) but we only count outer shell blocks
+        long estimatedSurface = 2L * ((long) sizeX * sizeY + (long) sizeX * sizeZ + (long) sizeY * sizeZ);
+        if (estimatedSurface > MAX_HOLLOW_BLOCKS) {
+            lastCalculationLimited = true;
+            lastLimitReason = String.format("Selection too large (~%,d surface blocks, max %,d)",
+                estimatedSurface, MAX_HOLLOW_BLOCKS);
+            return blocks;
+        }
+
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 if (filterLayer != -1 && y != filterLayer) continue;
@@ -63,6 +106,11 @@ public class HollowBlockCalculator {
                                         z == minZ || z == maxZ);
                     if (onSurface) {
                         blocks.add(new BlockPos(x, y, z));
+                        if (blocks.size() >= MAX_HOLLOW_BLOCKS) {
+                            lastCalculationLimited = true;
+                            lastLimitReason = String.format("Block limit reached (%,d blocks)", MAX_HOLLOW_BLOCKS);
+                            return blocks;
+                        }
                     }
                 }
             }
@@ -81,11 +129,22 @@ public class HollowBlockCalculator {
         BlockPos center = manager.getCenterBlock();
         if (center == null) return blocks;
 
-        double radius = manager.getMaxRadiusXZ();
+        double radius = manager.getMaxRadiusXZ() + manager.getCylinderRadiusOffsetBlocks();
         if (radius < 0.5) radius = 0.5;
 
         int minY = manager.getMinY();
         int maxY = manager.getMaxY();
+        int height = maxY - minY + 1;
+
+        // Estimate surface area: 2 * pi * r^2 (caps) + 2 * pi * r * h (sides)
+        long estimatedSurface = (long) (2 * Math.PI * radius * radius + 2 * Math.PI * radius * height);
+        if (estimatedSurface > MAX_HOLLOW_BLOCKS) {
+            lastCalculationLimited = true;
+            lastLimitReason = String.format("Selection too large (~%,d surface blocks, max %,d)",
+                estimatedSurface, MAX_HOLLOW_BLOCKS);
+            return blocks;
+        }
+
         int centerX = center.getX();
         int centerZ = center.getZ();
         int intRadius = (int) Math.ceil(radius);
@@ -104,12 +163,22 @@ public class HollowBlockCalculator {
                         // Cap: include all blocks inside the circle
                         if (dist <= radius + 0.5) {
                             blocks.add(new BlockPos(centerX + dx, y, centerZ + dz));
+                            if (blocks.size() >= MAX_HOLLOW_BLOCKS) {
+                                lastCalculationLimited = true;
+                                lastLimitReason = String.format("Block limit reached (%,d blocks)", MAX_HOLLOW_BLOCKS);
+                                return blocks;
+                            }
                         }
                     } else {
                         // Side: only include blocks on the circumference
                         // A block is on the circumference if its center is within 0.5 of the radius
                         if (dist >= radius - 0.5 && dist <= radius + 0.5) {
                             blocks.add(new BlockPos(centerX + dx, y, centerZ + dz));
+                            if (blocks.size() >= MAX_HOLLOW_BLOCKS) {
+                                lastCalculationLimited = true;
+                                lastLimitReason = String.format("Block limit reached (%,d blocks)", MAX_HOLLOW_BLOCKS);
+                                return blocks;
+                            }
                         }
                     }
                 }
@@ -163,6 +232,20 @@ public class HollowBlockCalculator {
         if (radiusY < 0.5) radiusY = 0.5;
         if (radiusZ < 0.5) radiusZ = 0.5;
 
+        // Estimate surface area using Knud Thomsen's approximation for ellipsoid surface
+        // S ≈ 4π * ((a^p * b^p + a^p * c^p + b^p * c^p) / 3)^(1/p) where p ≈ 1.6075
+        double p = 1.6075;
+        double ap = Math.pow(radiusX, p);
+        double bp = Math.pow(radiusY, p);
+        double cp = Math.pow(radiusZ, p);
+        long estimatedSurface = (long) (4 * Math.PI * Math.pow((ap * bp + ap * cp + bp * cp) / 3, 1 / p));
+        if (estimatedSurface > MAX_HOLLOW_BLOCKS) {
+            lastCalculationLimited = true;
+            lastLimitReason = String.format("Selection too large (~%,d surface blocks, max %,d)",
+                estimatedSurface, MAX_HOLLOW_BLOCKS);
+            return blocks;
+        }
+
         // Iterate over all blocks that could possibly be on the ellipsoid surface
         int maxRadX = (int) Math.ceil(radiusX) + 1;
         int maxRadY = (int) Math.ceil(radiusY) + 1;
@@ -194,6 +277,11 @@ public class HollowBlockCalculator {
 
                     if (Math.abs(dist - 1.0) <= threshold) {
                         blocks.add(new BlockPos(worldX, worldY, worldZ));
+                        if (blocks.size() >= MAX_HOLLOW_BLOCKS) {
+                            lastCalculationLimited = true;
+                            lastLimitReason = String.format("Block limit reached (%,d blocks)", MAX_HOLLOW_BLOCKS);
+                            return blocks;
+                        }
                     }
                 }
             }
@@ -216,12 +304,36 @@ public class HollowBlockCalculator {
 
         int tubeRadius = manager.getSplineRadius();
 
+        // Estimate total line length for surface area approximation
+        double totalLength = 0;
+        for (int i = 0; i < selection.size() - 1; i++) {
+            BlockPos from = selection.get(i);
+            BlockPos to = selection.get(i + 1);
+            totalLength += Math.sqrt(from.getSquaredDistance(to));
+        }
+
+        if (tubeRadius > 0) {
+            // Surface area of tube: 2 * pi * r * length + 2 * pi * r^2 (end caps)
+            long estimatedSurface = (long) (2 * Math.PI * tubeRadius * totalLength + 2 * Math.PI * tubeRadius * tubeRadius);
+            if (estimatedSurface > MAX_HOLLOW_BLOCKS) {
+                lastCalculationLimited = true;
+                lastLimitReason = String.format("Selection too large (~%,d surface blocks, max %,d)",
+                    estimatedSurface, MAX_HOLLOW_BLOCKS);
+                return blocks;
+            }
+        }
+
         if (tubeRadius == 0) {
             // No radius - just collect blocks along the center lines
             for (int i = 0; i < selection.size() - 1; i++) {
                 BlockPos from = selection.get(i);
                 BlockPos to = selection.get(i + 1);
-                traceLineBlocks(from, to, blocks, filterLayer);
+                traceLineBlocks(from, to, blocks, filterLayer, MAX_HOLLOW_BLOCKS);
+                if (blocks.size() >= MAX_HOLLOW_BLOCKS) {
+                    lastCalculationLimited = true;
+                    lastLimitReason = String.format("Block limit reached (%,d blocks)", MAX_HOLLOW_BLOCKS);
+                    return blocks;
+                }
             }
         } else {
             // With radius - collect all blocks inside the tube, then filter to surface
@@ -265,6 +377,13 @@ public class HollowBlockCalculator {
                         }
                     }
                 }
+
+                // Check volume limit during collection
+                if (allTubeBlocks.size() > MAX_VOLUME) {
+                    lastCalculationLimited = true;
+                    lastLimitReason = String.format("Volume too large (>%,d blocks)", MAX_VOLUME);
+                    return blocks;
+                }
             }
 
             // Filter to surface blocks only (hollow mode)
@@ -277,6 +396,11 @@ public class HollowBlockCalculator {
                 // Block is on surface if it's near the outer edge of the tube
                 if (minDist >= tubeRadius - 0.5) {
                     blocks.add(pos);
+                    if (blocks.size() >= MAX_HOLLOW_BLOCKS) {
+                        lastCalculationLimited = true;
+                        lastLimitReason = String.format("Block limit reached (%,d blocks)", MAX_HOLLOW_BLOCKS);
+                        return blocks;
+                    }
                 }
             }
         }
@@ -325,8 +449,9 @@ public class HollowBlockCalculator {
 
     /**
      * Traces blocks along a straight line between two points.
+     * @param limit maximum blocks to add (0 for unlimited)
      */
-    private static void traceLineBlocks(BlockPos from, BlockPos to, Set<BlockPos> blocks, int filterLayer) {
+    private static void traceLineBlocks(BlockPos from, BlockPos to, Set<BlockPos> blocks, int filterLayer, int limit) {
         Vec3d start = new Vec3d(from.getX() + 0.5, from.getY() + 0.5, from.getZ() + 0.5);
         Vec3d end = new Vec3d(to.getX() + 0.5, to.getY() + 0.5, to.getZ() + 0.5);
 
@@ -342,6 +467,9 @@ public class HollowBlockCalculator {
             int blockY = (int) Math.floor(y);
             if (filterLayer == -1 || blockY == filterLayer) {
                 blocks.add(new BlockPos((int) Math.floor(x), blockY, (int) Math.floor(z)));
+                if (limit > 0 && blocks.size() >= limit) {
+                    return;
+                }
             }
         }
     }
@@ -364,6 +492,25 @@ public class HollowBlockCalculator {
         Vec3d[] points = SplineMath.blockPosListToVec3d(selection);
         int n = points.length;
 
+        // Estimate spline length for surface area approximation
+        double estimatedLength = 0;
+        for (int i = 0; i < n - 1; i++) {
+            estimatedLength += points[i].distanceTo(points[i + 1]);
+        }
+        // Splines are typically longer than straight lines between points
+        estimatedLength *= 1.2;
+
+        if (tubeRadius > 0) {
+            // Surface area of tube: 2 * pi * r * length + 2 * pi * r^2 (end caps)
+            long estimatedSurface = (long) (2 * Math.PI * tubeRadius * estimatedLength + 2 * Math.PI * tubeRadius * tubeRadius);
+            if (estimatedSurface > MAX_HOLLOW_BLOCKS) {
+                lastCalculationLimited = true;
+                lastLimitReason = String.format("Selection too large (~%,d surface blocks, max %,d)",
+                    estimatedSurface, MAX_HOLLOW_BLOCKS);
+                return blocks;
+            }
+        }
+
         if (tubeRadius == 0) {
             // No radius - just collect blocks along the center line
             for (int i = 0; i < n - 1; i++) {
@@ -382,6 +529,11 @@ public class HollowBlockCalculator {
 
                     if (filterLayer == -1 || blockY == filterLayer) {
                         blocks.add(new BlockPos(blockX, blockY, blockZ));
+                        if (blocks.size() >= MAX_HOLLOW_BLOCKS) {
+                            lastCalculationLimited = true;
+                            lastLimitReason = String.format("Block limit reached (%,d blocks)", MAX_HOLLOW_BLOCKS);
+                            return blocks;
+                        }
                     }
                 }
             }
@@ -423,6 +575,13 @@ public class HollowBlockCalculator {
                         }
                     }
                 }
+
+                // Check volume limit during collection
+                if (allTubeBlocks.size() > MAX_VOLUME) {
+                    lastCalculationLimited = true;
+                    lastLimitReason = String.format("Volume too large (>%,d blocks)", MAX_VOLUME);
+                    return blocks;
+                }
             }
 
             // Filter to surface blocks only (hollow mode)
@@ -435,6 +594,11 @@ public class HollowBlockCalculator {
                 // Block is on surface if it's near the outer edge of the tube
                 if (minDist >= tubeRadius - 0.5) {
                     blocks.add(pos);
+                    if (blocks.size() >= MAX_HOLLOW_BLOCKS) {
+                        lastCalculationLimited = true;
+                        lastLimitReason = String.format("Block limit reached (%,d blocks)", MAX_HOLLOW_BLOCKS);
+                        return blocks;
+                    }
                 }
             }
         }
